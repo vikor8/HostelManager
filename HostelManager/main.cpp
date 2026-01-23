@@ -1,8 +1,11 @@
-#include <QCoreApplication>
+#include "hostelmanager.h"
+
+#include <QApplication>
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication a(argc, argv);
-
+    QApplication a(argc, argv);
+    HostelManager w;
+    w.show();
     return a.exec();
 }
