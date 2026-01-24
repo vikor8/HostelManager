@@ -100,10 +100,14 @@ public:
         tableWidget->setObjectName("tableWidget");
         tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
         tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
-        tableWidget->setSelectionBehavior(QAbstractItemView::SelectItems);
+        tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
         tableWidget->setShowGrid(true);
+        tableWidget->setGridStyle(Qt::SolidLine);
+        tableWidget->setCornerButtonEnabled(true);
+        tableWidget->horizontalHeader()->setVisible(true);
         tableWidget->horizontalHeader()->setHighlightSections(false);
         tableWidget->horizontalHeader()->setStretchLastSection(false);
+        tableWidget->verticalHeader()->setVisible(false);
 
         verticalLayout_2->addWidget(tableWidget);
 
