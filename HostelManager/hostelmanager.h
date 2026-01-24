@@ -3,6 +3,8 @@
 
 #include <QMainWindow>
 #include <QDate>
+#include <QInputDialog>
+#include "database.h"
 
 // Forward declarations
 class QTableWidget;
@@ -36,9 +38,12 @@ private slots:
 private:
     Ui::HostelManager *ui;
     QDate currentStartDate;
+    Database *database;
     static const int DAYS_COUNT = 31;
 
     void createMenuBar();
+    void initializeDatabase();
+    void loadDataFromDatabase();
 };
 
 #endif // HOSTELMANAGER_H
