@@ -19,6 +19,17 @@
 #include <QSqlError>
 #include <QSqlRecord>
 #include <QVariant>
+#include <QInputDialog>
+#include <QDialog>
+#include <QFormLayout>
+#include <QSpinBox>
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QCheckBox>
 
 HostelManager::HostelManager(QWidget *parent)
     : QMainWindow(parent)
@@ -64,17 +75,47 @@ QTableWidget* HostelManager::getTableWidget()
     return ui->tableWidget;
 }
 
+// Метод для перевода месяца на русский
+QString HostelManager::monthToRussian(const QString& month) const
+{
+    static QMap<QString, QString> monthMap = {
+        {"Jan", "Янв"}, {"Feb", "Фев"}, {"Mar", "Мар"}, {"Apr", "Апр"},
+        {"May", "Май"}, {"Jun", "Июн"}, {"Jul", "Июл"}, {"Aug", "Авг"},
+        {"Sep", "Сен"}, {"Oct", "Окт"}, {"Nov", "Ноя"}, {"Dec", "Дек"},
+        {"January", "Январь"}, {"February", "Февраль"}, {"March", "Март"},
+        {"April", "Апрель"}, {"May", "Май"}, {"June", "Июнь"},
+        {"July", "Июль"}, {"August", "Август"}, {"September", "Сентябрь"},
+        {"October", "Октябрь"}, {"November", "Ноябрь"}, {"December", "Декабрь"}
+    };
+
+    QString russianMonth = monthMap.value(month, month);
+    return russianMonth;
+}
+
 void HostelManager::initializeDatabase()
 {
     if (database->initializeDatabase()) {
         qDebug() << "База данных успешно инициализирована";
         ui->lblStatus->setText("База данных: подключена");
+        updateRoomIdMap(); // Обновляем карту ID комнат
     } else {
         qDebug() << "Ошибка инициализации базы данных";
         ui->lblStatus->setText("База данных: не подключена (демо-режим)");
-        QMessageBox::warning(this, "Ошибка базы данных",
-                            "Не удалось подключиться к базе данных. "
-                            "Приложение будет работать в демонстрационном режиме.");
+    }
+}
+
+void HostelManager::updateRoomIdMap()
+{
+    roomIdMap.clear();
+    if (database->isDatabaseConnected()) {
+        QSqlQuery query(database->getDatabase());
+        query.exec("SELECT id, room_number FROM rooms");
+        while (query.next()) {
+            int roomId = query.value(0).toInt();
+            QString roomNumber = query.value(1).toString();
+            roomIdMap.insert(roomNumber, roomId);
+        }
+        qDebug() << "Карта ID комнат обновлена, количество:" << roomIdMap.size();
     }
 }
 
@@ -93,7 +134,8 @@ void HostelManager::createMenuBar()
         if (database->initializeDatabase()) {
             QMessageBox::information(this, "База данных", "База данных успешно подключена");
             ui->lblStatus->setText("База данных: подключена");
-            initializeTable(); // Перезагружаем таблицу с новыми данными
+            updateRoomIdMap();
+            initializeTable();
         } else {
             QMessageBox::warning(this, "Ошибка", "Не удалось подключиться к базе данных");
             ui->lblStatus->setText("База данных: не подключена");
@@ -112,68 +154,6 @@ void HostelManager::createMenuBar()
                                        "Резервная копия базы данных создана:\n" + fileName);
             } else {
                 QMessageBox::warning(this, "Ошибка", "Не удалось создать резервную копию");
-            }
-        }
-    });
-
-    QAction *dbRestoreAction = databaseMenu->addAction("&Восстановить из копии");
-    dbRestoreAction->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_R);
-    connect(dbRestoreAction, &QAction::triggered, this, [this](){
-        QString fileName = QFileDialog::getOpenFileName(this, "Восстановить из резервной копии",
-            "", "SQLite Database (*.sqlite)");
-        if (!fileName.isEmpty()) {
-            QMessageBox::StandardButton reply;
-            reply = QMessageBox::question(this, "Восстановление",
-                "Вы уверены, что хотите восстановить базу данных из резервной копии?\n"
-                "Текущие данные будут потеряны!",
-                QMessageBox::Yes | QMessageBox::No);
-
-            if (reply == QMessageBox::Yes) {
-                // Закрываем текущее соединение
-                if (database->isDatabaseConnected()) {
-                    database->getDatabase().close();
-                }
-
-                // Удаляем текущую базу и копируем резервную
-                QFile::remove("BD_Kolcovo.sqlite");
-                if (QFile::copy(fileName, "BD_Kolcovo.sqlite")) {
-                    QMessageBox::information(this, "Восстановление",
-                                           "База данных восстановлена из резервной копии");
-                    // Переподключаемся
-                    if (database->initializeDatabase()) {
-                        ui->lblStatus->setText("База данных: подключена");
-                        initializeTable();
-                    }
-                } else {
-                    QMessageBox::warning(this, "Ошибка", "Не удалось восстановить базу данных");
-                }
-            }
-        }
-    });
-
-    QAction *dbResetAction = databaseMenu->addAction("&Создать новую базу данных");
-    connect(dbResetAction, &QAction::triggered, this, [this](){
-        QMessageBox::StandardButton reply;
-        reply = QMessageBox::question(this, "Новая база данных",
-            "Вы уверены, что хотите создать новую базу данных?\n"
-            "Все текущие данные будут удалены без возможности восстановления!",
-            QMessageBox::Yes | QMessageBox::No);
-
-        if (reply == QMessageBox::Yes) {
-            // Закрываем текущее соединение
-            if (database->isDatabaseConnected()) {
-                database->getDatabase().close();
-            }
-
-            // Удаляем текущую базу
-            QFile::remove("BD_Kolcovo.sqlite");
-
-            // Создаем новую
-            if (database->initializeDatabase()) {
-                QMessageBox::information(this, "Новая база данных",
-                                       "Новая база данных успешно создана");
-                ui->lblStatus->setText("База данных: подключена (новая)");
-                initializeTable();
             }
         }
     });
@@ -199,19 +179,6 @@ void HostelManager::createMenuBar()
             query.exec("SELECT COUNT(*) FROM bookings WHERE status = 'active'");
             if (query.next()) stats += "<tr><td>Активных бронирований:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
 
-            query.exec("SELECT COUNT(*) FROM bookings WHERE status = 'completed'");
-            if (query.next()) stats += "<tr><td>Завершенных бронирований:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
-
-            query.exec("SELECT SUM(total_price) FROM bookings WHERE status = 'active' "
-                      "AND check_in_date >= date('now', '-30 days')");
-            if (query.next()) {
-                double revenue = query.value(0).toDouble();
-                stats += "<tr><td>Доход за 30 дней:</td><td><b>" + QString::number(revenue, 'f', 2) + " руб.</b></td></tr>";
-            }
-
-            query.exec("SELECT COUNT(*) FROM services");
-            if (query.next()) stats += "<tr><td>Дополнительных услуг:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
-
             stats += "</table></body></html>";
 
             QMessageBox::information(this, "Статистика базы данных", stats);
@@ -225,68 +192,28 @@ void HostelManager::createMenuBar()
 
     QAction *newRoomAction = roomsMenu->addAction("&Новая комната");
     newRoomAction->setShortcut(QKeySequence::New);
-    connect(newRoomAction, &QAction::triggered, this, [this](){
-        bool ok;
-        QString roomNumber = QInputDialog::getText(this, "Новая комната",
-                                                  "Введите номер комнаты:",
-                                                  QLineEdit::Normal, "", &ok);
-        if (ok && !roomNumber.isEmpty()) {
-            QString category = QInputDialog::getItem(this, "Категория комнаты",
-                                                    "Выберите категорию:",
-                                                    QStringList() << "Эконом" << "Стандарт" << "Комфорт" << "Люкс",
-                                                    1, false, &ok);
-            if (ok && !category.isEmpty()) {
-                if (database->isDatabaseConnected()) {
-                    if (database->addRoom(roomNumber, category, 4)) {
-                        QMessageBox::information(this, "Новая комната",
-                                               "Комната " + roomNumber + " успешно добавлена");
-                        initializeTable(); // Обновляем таблицу
-                    } else {
-                        QMessageBox::warning(this, "Ошибка", "Не удалось добавить комнату");
-                    }
-                } else {
-                    QMessageBox::warning(this, "Ошибка", "База данных не подключена");
-                }
-            }
-        }
-    });
+    connect(newRoomAction, &QAction::triggered, this, &HostelManager::onAddRoom);
 
     QAction *editRoomAction = roomsMenu->addAction("&Редактировать комнату");
     editRoomAction->setShortcut(Qt::CTRL | Qt::Key_E);
-    connect(editRoomAction, &QAction::triggered, this, [this](){
-        QMessageBox::information(this, "Редактировать комнату", "Функция в разработке...");
-    });
+    connect(editRoomAction, &QAction::triggered, this, &HostelManager::onEditRoom);
 
     QAction *deleteRoomAction = roomsMenu->addAction("&Удалить комнату");
     deleteRoomAction->setShortcut(Qt::CTRL | Qt::Key_D);
-    connect(deleteRoomAction, &QAction::triggered, this, [this](){
-        QMessageBox::StandardButton reply;
-        reply = QMessageBox::question(this, "Удалить комнату",
-            "Вы уверены, что хотите удалить комнату?\nЭто действие невозможно отменить.",
-            QMessageBox::Yes | QMessageBox::No);
-        if (reply == QMessageBox::Yes) {
-            QMessageBox::information(this, "Удалить комнату", "Функция в разработке...");
-        }
-    });
+    connect(deleteRoomAction, &QAction::triggered, this, &HostelManager::onDeleteRoom);
 
     roomsMenu->addSeparator();
 
     QAction *exportRoomsAction = roomsMenu->addAction("&Экспорт списка комнат");
     exportRoomsAction->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_E);
     connect(exportRoomsAction, &QAction::triggered, this, [this](){
-        QString fileName = QFileDialog::getSaveFileName(this, "Экспорт списка комнат",
-            "rooms_export.xlsx", "Excel Files (*.xlsx);;CSV Files (*.csv)");
-        if (!fileName.isEmpty()) {
-            QMessageBox::information(this, "Экспорт", "Экспорт списка комнат: " + fileName);
-            qDebug() << "Меню: Комнаты -> Экспорт списка комнат:" << fileName;
-        }
+        QMessageBox::information(this, "Экспорт", "Функция экспорта в разработке...");
     });
 
     QAction *printRoomsAction = roomsMenu->addAction("&Печать списка комнат");
     printRoomsAction->setShortcut(QKeySequence::Print);
     connect(printRoomsAction, &QAction::triggered, this, [this](){
         QMessageBox::information(this, "Печать", "Печать списка комнат...");
-        qDebug() << "Меню: Комнаты -> Печать списка комнат";
     });
 
     roomsMenu->addSeparator();
@@ -303,14 +230,8 @@ void HostelManager::createMenuBar()
         }
     });
 
-    // Создаем меню "Клиенты"
+    // Создаем меню "Клиенты" (упрощенная версия)
     QMenu *clientsMenu = menuBar->addMenu("&Клиенты");
-
-    QAction *addClientAction = clientsMenu->addAction("&Добавить клиента");
-    connect(addClientAction, &QAction::triggered, this, [this](){
-        QMessageBox::information(this, "Добавить клиента", "Функция в разработке...");
-    });
-
     QAction *viewClientsAction = clientsMenu->addAction("&Просмотр клиентов");
     connect(viewClientsAction, &QAction::triggered, this, [this](){
         if (database->isDatabaseConnected()) {
@@ -335,159 +256,8 @@ void HostelManager::createMenuBar()
         }
     });
 
-    QAction *editClientAction = clientsMenu->addAction("&Редактировать клиента");
-    connect(editClientAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Редактировать клиента", "Редактирование данных клиента...");
-        qDebug() << "Меню: Клиенты -> Редактировать клиента";
-    });
-
-    QAction *deleteClientAction = clientsMenu->addAction("&Удалить клиента");
-    connect(deleteClientAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Удалить клиента", "Удаление клиента...");
-        qDebug() << "Меню: Клиенты -> Удалить клиента";
-    });
-
-    // Создаем меню "Бронирование"
-    QMenu *bookingMenu = menuBar->addMenu("&Бронирование");
-
-    QAction *newBookingAction = bookingMenu->addAction("&Новое бронирование");
-    connect(newBookingAction, &QAction::triggered, this, [this](){
-        QMessageBox::information(this, "Новое бронирование", "Функция в разработке...");
-    });
-
-    QAction *viewBookingsAction = bookingMenu->addAction("&Просмотр бронирований");
-    connect(viewBookingsAction, &QAction::triggered, this, [this](){
-        if (database->isDatabaseConnected()) {
-            QSqlQuery query(database->getDatabase());
-            query.exec("SELECT room_number, bed_number, client_name, check_in_date, "
-                      "check_out_date, total_price FROM current_bookings ORDER BY check_in_date");
-
-            QString bookingsList = "<html><body><h3>Текущие бронирования</h3><table border='1' width='100%'>"
-                                  "<tr><th>Комната</th><th>Койка</th><th>Клиент</th><th>Заезд</th><th>Выезд</th><th>Стоимость</th></tr>";
-
-            while (query.next()) {
-                bookingsList += "<tr>";
-                for (int i = 0; i < 6; ++i) {
-                    bookingsList += "<td>" + query.value(i).toString() + "</td>";
-                }
-                bookingsList += "</tr>";
-            }
-            bookingsList += "</table></body></html>";
-
-            QMessageBox::information(this, "Просмотр бронирований", bookingsList);
-        } else {
-            QMessageBox::warning(this, "Ошибка", "База данных не подключена");
-        }
-    });
-
-    QAction *editBookingAction = bookingMenu->addAction("&Изменить бронирование");
-    connect(editBookingAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Изменить бронирование", "Изменение данных бронирования...");
-        qDebug() << "Меню: Бронирование -> Изменить бронирование";
-    });
-
-    QAction *cancelBookingAction = bookingMenu->addAction("&Отменить бронирование");
-    connect(cancelBookingAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Отменить бронирование", "Отмена бронирования...");
-        qDebug() << "Меню: Бронирование -> Отменить бронирование";
-    });
-
-    QAction *checkInAction = bookingMenu->addAction("&Заселение");
-    connect(checkInAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Заселение", "Процедура заселения...");
-        qDebug() << "Меню: Бронирование -> Заселение";
-    });
-
-    QAction *checkOutAction = bookingMenu->addAction("&Выселение");
-    connect(checkOutAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Выселение", "Процедура выселения...");
-        qDebug() << "Меню: Бронирование -> Выселение";
-    });
-
-    // Создаем меню "Доп. услуги"
-    QMenu *servicesMenu = menuBar->addMenu("&Доп. услуги");
-
-    QAction *addServiceAction = servicesMenu->addAction("&Добавить услугу");
-    connect(addServiceAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Добавить услугу", "Добавление новой услуги...");
-        qDebug() << "Меню: Доп. услуги -> Добавить услугу";
-    });
-
-    QAction *viewServicesAction = servicesMenu->addAction("&Просмотр услуг");
-    connect(viewServicesAction, &QAction::triggered, this, [this](){
-        if (database->isDatabaseConnected()) {
-            QSqlQuery query(database->getDatabase());
-            query.exec("SELECT service_name, description, price FROM services ORDER BY service_name");
-
-            QString servicesList = "<html><body><h3>Дополнительные услуги</h3><table border='1' width='100%'>"
-                                  "<tr><th>Название услуги</th><th>Описание</th><th>Цена</th></tr>";
-
-            while (query.next()) {
-                servicesList += "<tr>";
-                servicesList += "<td>" + query.value(0).toString() + "</td>";
-                servicesList += "<td>" + query.value(1).toString() + "</td>";
-                servicesList += "<td>" + QString::number(query.value(2).toDouble(), 'f', 2) + " руб.</td>";
-                servicesList += "</tr>";
-            }
-            servicesList += "</table></body></html>";
-
-            QMessageBox::information(this, "Просмотр услуг", servicesList);
-        } else {
-            QMessageBox::warning(this, "Ошибка", "База данных не подключена");
-        }
-    });
-
-    QAction *assignServiceAction = servicesMenu->addAction("&Назначить услугу");
-    connect(assignServiceAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Назначить услугу", "Назначение услуги клиенту...");
-        qDebug() << "Меню: Доп. услуги -> Назначить услугу";
-    });
-
-    // Создаем меню "Статистика"
-    QMenu *statsMenu = menuBar->addMenu("&Статистика");
-
-    QAction *occupancyStatsAction = statsMenu->addAction("&Загрузка номеров");
-    connect(occupancyStatsAction, &QAction::triggered, this, [this](){
-        if (database->isDatabaseConnected()) {
-            QSqlQuery query(database->getDatabase());
-            query.exec("SELECT * FROM occupancy_stats");
-
-            QString occupancyList = "<html><body><h3>Загрузка номеров</h3><table border='1' width='100%'>"
-                                   "<tr><th>Комната</th><th>Всего коек</th><th>Занято коек</th><th>Загрузка</th></tr>";
-
-            while (query.next()) {
-                int totalBeds = query.value(1).toInt();
-                int occupiedBeds = query.value(2).toInt();
-                double occupancyRate = totalBeds > 0 ? (occupiedBeds * 100.0 / totalBeds) : 0;
-
-                occupancyList += "<tr>";
-                occupancyList += "<td>" + query.value(0).toString() + "</td>";
-                occupancyList += "<td>" + QString::number(totalBeds) + "</td>";
-                occupancyList += "<td>" + QString::number(occupiedBeds) + "</td>";
-                occupancyList += "<td>" + QString::number(occupancyRate, 'f', 1) + "%</td>";
-                occupancyList += "</tr>";
-            }
-            occupancyList += "</table></body></html>";
-
-            QMessageBox::information(this, "Загрузка номеров", occupancyList);
-        } else {
-            QMessageBox::warning(this, "Ошибка", "База данных не подключена");
-        }
-    });
-
-    QAction *revenueStatsAction = statsMenu->addAction("&Финансовая статистика");
-    connect(revenueStatsAction, &QAction::triggered, this, [this](){
-        QMessageBox::information(this, "Финансовая статистика", "Функция в разработке...");
-    });
-
-    QAction *clientStatsAction = statsMenu->addAction("&Статистика по клиентам");
-    connect(clientStatsAction, &QAction::triggered, this, [this](){
-        QMessageBox::information(this, "Статистика по клиентам", "Функция в разработке...");
-    });
-
     // Создаем меню "О программе"
     QMenu *helpMenu = menuBar->addMenu("&О программе");
-
     QAction *aboutAction = helpMenu->addAction("&О программе");
     connect(aboutAction, &QAction::triggered, this, [](){
         QMessageBox::about(nullptr, "О программе",
@@ -496,21 +266,375 @@ void HostelManager::createMenuBar()
             "<p>Разработано для управления хостелом</p>"
             "<p>База данных: SQLite (BD_Kolcovo.sqlite)</p>"
             "<p>© 2024 Все права защищены</p>");
-        qDebug() << "Меню: О программе -> О программе";
+    });
+}
+
+// Слот для добавления новой комнаты
+void HostelManager::onAddRoom()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Создаем диалоговое окно
+    QDialog dialog(this);
+    dialog.setWindowTitle("Добавить новую комнату");
+    dialog.setFixedSize(400, 300);
+
+    // Создаем элементы формы
+    QFormLayout *layout = new QFormLayout(&dialog);
+
+    QLineEdit *roomNumberEdit = new QLineEdit(&dialog);
+    roomNumberEdit->setPlaceholderText("Например: 101");
+    layout->addRow("Номер комнаты:", roomNumberEdit);
+
+    QSpinBox *bedsCountSpin = new QSpinBox(&dialog);
+    bedsCountSpin->setRange(1, 10);
+    bedsCountSpin->setValue(4);
+    layout->addRow("Количество коек:", bedsCountSpin);
+
+    QComboBox *categoryCombo = new QComboBox(&dialog);
+    categoryCombo->addItems(QStringList() << "Эконом" << "Стандарт" << "Комфорт" << "Люкс");
+    layout->addRow("Категория:", categoryCombo);
+
+    QDoubleSpinBox *priceSpin = new QDoubleSpinBox(&dialog);
+    priceSpin->setRange(100, 10000);
+    priceSpin->setValue(500);
+    priceSpin->setSuffix(" руб./день");
+    priceSpin->setDecimals(2);
+    layout->addRow("Стоимость за день:", priceSpin);
+
+    QLabel *infoLabel = new QLabel("Примечание: Для каждой койки в комнате будет установлена указанная цена", &dialog);
+    infoLabel->setWordWrap(true);
+    layout->addRow(infoLabel);
+
+    // Кнопки
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    layout->addRow(buttonBox);
+
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    // Проверяем ввод
+    connect(roomNumberEdit, &QLineEdit::textChanged, [&dialog, roomNumberEdit, buttonBox]() {
+        bool isValid = !roomNumberEdit->text().trimmed().isEmpty();
+        buttonBox->button(QDialogButtonBox::Ok)->setEnabled(isValid);
     });
 
-    QAction *aboutQtAction = helpMenu->addAction("&О Qt");
-    connect(aboutQtAction, &QAction::triggered, this, [](){
-        QMessageBox::aboutQt(nullptr, "О Qt");
-        qDebug() << "Меню: О программе -> О Qt";
-    });
+    buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
 
-    QAction *helpAction = helpMenu->addAction("&Справка");
-    helpAction->setShortcut(QKeySequence::HelpContents);
-    connect(helpAction, &QAction::triggered, this, [](){
-        QMessageBox::information(nullptr, "Справка", "Открытие справки...");
-        qDebug() << "Меню: О программе -> Справка";
-    });
+    if (dialog.exec() == QDialog::Accepted) {
+        QString roomNumber = roomNumberEdit->text().trimmed();
+        int bedsCount = bedsCountSpin->value();
+        QString category = categoryCombo->currentText();
+        double pricePerDay = priceSpin->value();
+
+        // Проверяем, существует ли уже такая комната
+        QSqlQuery checkQuery(database->getDatabase());
+        checkQuery.prepare("SELECT COUNT(*) FROM rooms WHERE room_number = ?");
+        checkQuery.addBindValue(roomNumber);
+
+        if (checkQuery.exec() && checkQuery.next() && checkQuery.value(0).toInt() > 0) {
+            QMessageBox::warning(this, "Ошибка", "Комната с таким номером уже существует!");
+            return;
+        }
+
+        // Добавляем комнату
+        QSqlQuery query(database->getDatabase());
+        query.prepare("INSERT INTO rooms (room_number, category, beds_count) VALUES (?, ?, ?)");
+        query.addBindValue(roomNumber);
+        query.addBindValue(category);
+        query.addBindValue(bedsCount);
+
+        if (!query.exec()) {
+            QMessageBox::warning(this, "Ошибка", "Не удалось добавить комнату: " + query.lastError().text());
+            return;
+        }
+
+        int roomId = query.lastInsertId().toInt();
+
+        // Добавляем койки с указанной ценой
+        for (int i = 1; i <= bedsCount; ++i) {
+            QSqlQuery bedQuery(database->getDatabase());
+            bedQuery.prepare("INSERT INTO beds (room_id, bed_number, price_per_day) VALUES (?, ?, ?)");
+            bedQuery.addBindValue(roomId);
+            bedQuery.addBindValue(i);
+            bedQuery.addBindValue(pricePerDay);
+
+            if (!bedQuery.exec()) {
+                QMessageBox::warning(this, "Ошибка",
+                    QString("Не удалось добавить койку %1: %2").arg(i).arg(bedQuery.lastError().text()));
+            }
+        }
+
+        QMessageBox::information(this, "Успех",
+            QString("Комната %1 успешно добавлена!\nКатегория: %2\nКоличество коек: %3\nЦена за день: %4 руб.")
+                .arg(roomNumber).arg(category).arg(bedsCount).arg(pricePerDay, 0, 'f', 2));
+
+        updateRoomIdMap();
+        initializeTable();
+    }
+}
+
+// Слот для редактирования комнаты
+void HostelManager::onEditRoom()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Получаем список комнат
+    QStringList roomsList;
+    QMap<QString, QVariant> roomData; // room_number -> (id, category, beds_count)
+
+    QSqlQuery query(database->getDatabase());
+    query.exec("SELECT id, room_number, category, beds_count FROM rooms ORDER BY room_number");
+
+    while (query.next()) {
+        int id = query.value(0).toInt();
+        QString roomNumber = query.value(1).toString();
+        QString category = query.value(2).toString();
+        int bedsCount = query.value(3).toInt();
+
+        roomsList << roomNumber;
+        roomData[roomNumber] = QVariantList() << id << category << bedsCount;
+    }
+
+    if (roomsList.isEmpty()) {
+        QMessageBox::information(this, "Редактирование", "В базе данных нет комнат для редактирования");
+        return;
+    }
+
+    bool ok;
+    QString roomNumber = QInputDialog::getItem(this, "Выбор комнаты",
+                                              "Выберите комнату для редактирования:",
+                                              roomsList, 0, false, &ok);
+
+    if (!ok || roomNumber.isEmpty()) {
+        return;
+    }
+
+    // Получаем данные о выбранной комнате
+    QVariantList data = roomData[roomNumber].toList();
+    int roomId = data[0].toInt();
+    QString currentCategory = data[1].toString();
+    int currentBedsCount = data[2].toInt();
+
+    // Получаем текущую цену (берем цену первой койки)
+    double currentPrice = 500.0;
+    QSqlQuery priceQuery(database->getDatabase());
+    priceQuery.prepare("SELECT price_per_day FROM beds WHERE room_id = ? LIMIT 1");
+    priceQuery.addBindValue(roomId);
+    if (priceQuery.exec() && priceQuery.next()) {
+        currentPrice = priceQuery.value(0).toDouble();
+    }
+
+    // Создаем диалоговое окно
+    QDialog dialog(this);
+    dialog.setWindowTitle("Редактировать комнату: " + roomNumber);
+    dialog.setFixedSize(400, 350);
+
+    QFormLayout *layout = new QFormLayout(&dialog);
+
+    QLabel *roomLabel = new QLabel(roomNumber, &dialog);
+    roomLabel->setStyleSheet("font-weight: bold; font-size: 14px;");
+    layout->addRow("Номер комнаты:", roomLabel);
+
+    QSpinBox *bedsCountSpin = new QSpinBox(&dialog);
+    bedsCountSpin->setRange(1, 10);
+    bedsCountSpin->setValue(currentBedsCount);
+    layout->addRow("Количество коек:", bedsCountSpin);
+
+    QComboBox *categoryCombo = new QComboBox(&dialog);
+    categoryCombo->addItems(QStringList() << "Эконом" << "Стандарт" << "Комфорт" << "Люкс");
+    categoryCombo->setCurrentText(currentCategory);
+    layout->addRow("Категория:", categoryCombo);
+
+    QDoubleSpinBox *priceSpin = new QDoubleSpinBox(&dialog);
+    priceSpin->setRange(100, 10000);
+    priceSpin->setValue(currentPrice);
+    priceSpin->setSuffix(" руб./день");
+    priceSpin->setDecimals(2);
+    layout->addRow("Стоимость за день:", priceSpin);
+
+    // Чекбокс для обновления цены всех коек
+    QCheckBox *updateAllBedsCheck = new QCheckBox("Обновить цену для всех коек в комнате", &dialog);
+    updateAllBedsCheck->setChecked(true);
+    layout->addRow("", updateAllBedsCheck);
+
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+    layout->addRow(buttonBox);
+
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        int newBedsCount = bedsCountSpin->value();
+        QString newCategory = categoryCombo->currentText();
+        double newPrice = priceSpin->value();
+        bool updateAllBeds = updateAllBedsCheck->isChecked();
+
+        // Обновляем данные комнаты
+        QSqlQuery updateQuery(database->getDatabase());
+        updateQuery.prepare("UPDATE rooms SET category = ?, beds_count = ? WHERE id = ?");
+        updateQuery.addBindValue(newCategory);
+        updateQuery.addBindValue(newBedsCount);
+        updateQuery.addBindValue(roomId);
+
+        if (!updateQuery.exec()) {
+            QMessageBox::warning(this, "Ошибка", "Не удалось обновить данные комнаты: " + updateQuery.lastError().text());
+            return;
+        }
+
+        // Обновляем цену коек
+        if (updateAllBeds) {
+            QSqlQuery priceUpdateQuery(database->getDatabase());
+            priceUpdateQuery.prepare("UPDATE beds SET price_per_day = ? WHERE room_id = ?");
+            priceUpdateQuery.addBindValue(newPrice);
+            priceUpdateQuery.addBindValue(roomId);
+
+            if (!priceUpdateQuery.exec()) {
+                QMessageBox::warning(this, "Ошибка", "Не удалось обновить цены коек: " + priceUpdateQuery.lastError().text());
+            }
+        }
+
+        // Если изменилось количество коек
+        if (newBedsCount != currentBedsCount) {
+            // Получаем текущее количество коек
+            QSqlQuery countQuery(database->getDatabase());
+            countQuery.prepare("SELECT COUNT(*) FROM beds WHERE room_id = ?");
+            countQuery.addBindValue(roomId);
+
+            if (countQuery.exec() && countQuery.next()) {
+                int currentBedsInDb = countQuery.value(0).toInt();
+
+                if (newBedsCount > currentBedsInDb) {
+                    // Добавляем недостающие койки
+                    for (int i = currentBedsInDb + 1; i <= newBedsCount; ++i) {
+                        QSqlQuery addBedQuery(database->getDatabase());
+                        addBedQuery.prepare("INSERT INTO beds (room_id, bed_number, price_per_day) VALUES (?, ?, ?)");
+                        addBedQuery.addBindValue(roomId);
+                        addBedQuery.addBindValue(i);
+                        addBedQuery.addBindValue(newPrice);
+                        addBedQuery.exec();
+                    }
+                } else if (newBedsCount < currentBedsInDb) {
+                    // Удаляем лишние койки (только если они не заняты)
+                    QMessageBox::StandardButton reply = QMessageBox::question(this, "Удаление коек",
+                        QString("Вы хотите уменьшить количество коек с %1 до %2.\n"
+                               "Койки с номерами больше %2 будут удалены.\n\n"
+                               "Продолжить?")
+                            .arg(currentBedsInDb).arg(newBedsCount),
+                        QMessageBox::Yes | QMessageBox::No);
+
+                    if (reply == QMessageBox::Yes) {
+                        QSqlQuery deleteQuery(database->getDatabase());
+                        deleteQuery.prepare("DELETE FROM beds WHERE room_id = ? AND bed_number > ?");
+                        deleteQuery.addBindValue(roomId);
+                        deleteQuery.addBindValue(newBedsCount);
+                        deleteQuery.exec();
+                    }
+                }
+            }
+        }
+
+        QMessageBox::information(this, "Успех", "Данные комнаты обновлены!");
+        updateRoomIdMap();
+        initializeTable();
+    }
+}
+
+// Слот для удаления комнаты
+void HostelManager::onDeleteRoom()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Получаем список комнат
+    QStringList roomsList;
+    QMap<QString, int> roomIdMapLocal;
+
+    QSqlQuery query(database->getDatabase());
+    query.exec("SELECT id, room_number FROM rooms ORDER BY room_number");
+
+    while (query.next()) {
+        int id = query.value(0).toInt();
+        QString roomNumber = query.value(1).toString();
+        roomsList << roomNumber;
+        roomIdMapLocal.insert(roomNumber, id);
+    }
+
+    if (roomsList.isEmpty()) {
+        QMessageBox::information(this, "Удаление", "В базе данных нет комнат для удаления");
+        return;
+    }
+
+    bool ok;
+    QString roomNumber = QInputDialog::getItem(this, "Удаление комнаты",
+                                              "Выберите комнату для удаления:",
+                                              roomsList, 0, false, &ok);
+
+    if (!ok || roomNumber.isEmpty()) {
+        return;
+    }
+
+    int roomId = roomIdMapLocal.value(roomNumber);
+
+    // Проверяем, есть ли активные бронирования
+    QSqlQuery checkBookingQuery(database->getDatabase());
+    checkBookingQuery.prepare(
+        "SELECT COUNT(*) FROM bookings bk "
+        "JOIN beds b ON bk.bed_id = b.id "
+        "WHERE b.room_id = ? AND bk.status = 'active'"
+    );
+    checkBookingQuery.addBindValue(roomId);
+
+    if (checkBookingQuery.exec() && checkBookingQuery.next()) {
+        int activeBookings = checkBookingQuery.value(0).toInt();
+
+        if (activeBookings > 0) {
+            QMessageBox::warning(this, "Ошибка",
+                QString("Нельзя удалить комнату %1!\n"
+                       "В ней есть %2 активных бронирований.\n"
+                       "Сначала отмените все бронирования.")
+                    .arg(roomNumber).arg(activeBookings));
+            return;
+        }
+    }
+
+    // Запрос подтверждения
+    QMessageBox::StandardButton confirm = QMessageBox::question(this, "Подтверждение удаления",
+        QString("Вы уверены, что хотите удалить комнату %1?\n\n"
+               "Это действие удалит:\n"
+               "- Все данные о комнате\n"
+               "- Все койки в комнате\n"
+               "- Все исторические бронирования\n\n"
+               "Действие необратимо!")
+            .arg(roomNumber),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+    if (confirm == QMessageBox::Yes) {
+        // Удаляем комнату (каскадное удаление удалит все связанные койки)
+        QSqlQuery deleteQuery(database->getDatabase());
+        deleteQuery.prepare("DELETE FROM rooms WHERE id = ?");
+        deleteQuery.addBindValue(roomId);
+
+        if (deleteQuery.exec()) {
+            if (deleteQuery.numRowsAffected() > 0) {
+                QMessageBox::information(this, "Успех", "Комната успешно удалена!");
+                updateRoomIdMap();
+                initializeTable();
+            } else {
+                QMessageBox::warning(this, "Ошибка", "Не удалось удалить комнату");
+            }
+        } else {
+            QMessageBox::warning(this, "Ошибка", "Ошибка при удалении: " + deleteQuery.lastError().text());
+        }
+    }
 }
 
 void HostelManager::on_btnToday_clicked()
@@ -679,9 +803,12 @@ void HostelManager::updateTableHeaders()
         // Добавляем заголовки для дней
         for (int day = 0; day < DAYS_COUNT; ++day) {
             QDate currentDate = currentStartDate.addDays(day);
+            QString englishMonth = currentDate.toString("MMM");
+            QString russianMonth = monthToRussian(englishMonth);
+
             QString headerText = QString("%1\n%2")
                 .arg(currentDate.toString("dd"))
-                .arg(currentDate.toString("MMM"));
+                .arg(russianMonth);
             headers << headerText;
         }
 

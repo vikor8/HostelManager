@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QDate>
 #include <QInputDialog>
+#include <QMap>
 #include "database.h"
 
 // Forward declarations
@@ -28,6 +29,9 @@ public:
     QDate getCurrentStartDate() const { return currentStartDate; }
     void updateTableColors();
 
+    // Метод для перевода месяца на русский
+    QString monthToRussian(const QString& month) const;
+
 private slots:
     void on_btnToday_clicked();
     void on_btnRefresh_clicked();
@@ -35,15 +39,23 @@ private slots:
     void initializeTable();
     void updateTableHeaders();
 
+    // Слоты для управления комнатами
+    void onAddRoom();
+    void onEditRoom();
+    void onDeleteRoom();
+
 private:
     Ui::HostelManager *ui;
     QDate currentStartDate;
     Database *database;
     static const int DAYS_COUNT = 31;
 
+    QMap<QString, int> roomIdMap; // Карта для хранения ID комнат
+
     void createMenuBar();
     void initializeDatabase();
     void loadDataFromDatabase();
+    void updateRoomIdMap(); // Обновление карты ID комнат
 };
 
 #endif // HOSTELMANAGER_H
