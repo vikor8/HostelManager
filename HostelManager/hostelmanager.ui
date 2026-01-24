@@ -1,22 +1,35 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ui version="4.0">
- <class>HostelManager</class>
- <widget class="QMainWindow" name="HostelManager">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>800</width>
-    <height>600</height>
-   </rect>
-  </property>
-  <property name="windowTitle">
-   <string>HostelManager</string>
-  </property>
-  <widget class="QWidget" name="centralwidget"/>
-  <widget class="QMenuBar" name="menubar"/>
-  <widget class="QStatusBar" name="statusbar"/>
- </widget>
- <resources/>
- <connections/>
-</ui>
+<widget class="QTableWidget" name="tableWidget">
+ <property name="editTriggers">
+  <set>QAbstractItemView::NoEditTriggers</set>
+ </property>
+ <property name="selectionMode">
+  <enum>QAbstractItemView::SingleSelection</enum>
+ </property>
+ <property name="selectionBehavior">
+  <enum>QAbstractItemView::SelectRows</enum> <!-- Изменено на SelectRows -->
+ </property>
+ <property name="showGrid">
+  <bool>true</bool>
+ </property>
+ <property name="gridStyle">
+  <enum>Qt::SolidLine</enum>
+ </property>
+ <property name="cornerButtonEnabled">
+  <bool>true</bool>
+ </property>
+ <attribute name="horizontalHeaderVisible">
+  <bool>true</bool>
+ </attribute>
+ <attribute name="verticalHeaderVisible">
+  <bool>false</bool> <!-- Скрываем вертикальные заголовки -->
+ </attribute>
+ <attribute name="horizontalHeaderHighlightSections">
+  <bool>false</bool>
+ </attribute>
+ <attribute name="horizontalHeaderStretchLastSection">
+  <bool>false</bool>
+ </attribute>
+ <attribute name="horizontalHeaderCascadingSectionResizes">
+  <bool>false</bool>
+ </attribute>
+</widget>

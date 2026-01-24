@@ -1,4 +1,0 @@
-#ifndef HOSTELMANAGER_UI_H
-#define HOSTELMANAGER_UI_H
-
-#endif // HOSTELMANAGER_UI_H
