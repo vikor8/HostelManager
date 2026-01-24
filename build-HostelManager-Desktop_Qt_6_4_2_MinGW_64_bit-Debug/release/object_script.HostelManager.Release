@@ -1,0 +1,11 @@
+release/clientsbooking.o
+release/filemenu.o
+release/main.o
+release/hostelmanager.o
+release/menuhandler.o
+release/statistics.o
+release/moc_clientsbooking.o
+release/moc_filemenu.o
+release/moc_hostelmanager.o
+release/moc_menuhandler.o
+release/moc_statistics.o

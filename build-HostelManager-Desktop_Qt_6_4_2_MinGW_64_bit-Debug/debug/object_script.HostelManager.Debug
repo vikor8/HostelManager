@@ -1,0 +1,11 @@
+debug/clientsbooking.o
+debug/filemenu.o
+debug/main.o
+debug/hostelmanager.o
+debug/menuhandler.o
+debug/statistics.o
+debug/moc_clientsbooking.o
+debug/moc_filemenu.o
+debug/moc_hostelmanager.o
+debug/moc_menuhandler.o
+debug/moc_statistics.o

@@ -9,6 +9,12 @@
 #include <QRandomGenerator>
 #include <QTime>
 #include <QDebug>
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
+#include <QMessageBox>
+#include <QFileDialog>
+#include <QApplication>
 
 HostelManager::HostelManager(QWidget *parent)
     : QMainWindow(parent)
@@ -18,6 +24,9 @@ HostelManager::HostelManager(QWidget *parent)
     ui->setupUi(this);
 
     qDebug() << "Конструктор HostelManager начал работу";
+
+    // Создаем меню бар
+    createMenuBar();
 
     // Устанавливаем текущую дату
     ui->dateEdit->setDate(currentStartDate);
@@ -36,6 +45,219 @@ HostelManager::HostelManager(QWidget *parent)
 HostelManager::~HostelManager()
 {
     delete ui;
+}
+
+// Реализация метода getTableWidget
+QTableWidget* HostelManager::getTableWidget()
+{
+    return ui->tableWidget;
+}
+
+void HostelManager::createMenuBar()
+{
+    // Создаем меню бар
+    QMenuBar *menuBar = new QMenuBar(this);
+    this->setMenuBar(menuBar);
+
+    // Создаем меню "Комнаты"
+    QMenu *roomsMenu = menuBar->addMenu("&Комнаты");
+
+    QAction *newRoomAction = roomsMenu->addAction("&Новая комната");
+    newRoomAction->setShortcut(QKeySequence::New);
+    connect(newRoomAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Новая комната", "Добавление новой комнаты...");
+        qDebug() << "Меню: Комнаты -> Новая комната";
+    });
+
+    QAction *editRoomAction = roomsMenu->addAction("&Редактировать комнату");
+    editRoomAction->setShortcut(Qt::CTRL | Qt::Key_E);
+    connect(editRoomAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Редактировать комнату", "Редактирование данных комнаты...");
+        qDebug() << "Меню: Комнаты -> Редактировать комнату";
+    });
+
+    QAction *deleteRoomAction = roomsMenu->addAction("&Удалить комнату");
+    deleteRoomAction->setShortcut(Qt::CTRL | Qt::Key_D);
+    connect(deleteRoomAction, &QAction::triggered, this, [](){
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(nullptr, "Удалить комнату",
+            "Вы уверены, что хотите удалить комнату?\nЭто действие невозможно отменить.",
+            QMessageBox::Yes | QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            QMessageBox::information(nullptr, "Удалить комнату", "Комната удалена...");
+            qDebug() << "Меню: Комнаты -> Удалить комнату (подтверждено)";
+        } else {
+            qDebug() << "Меню: Комнаты -> Удалить комнату (отменено)";
+        }
+    });
+
+    roomsMenu->addSeparator();
+
+    QAction *exportRoomsAction = roomsMenu->addAction("&Экспорт списка комнат");
+    exportRoomsAction->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_E);
+    connect(exportRoomsAction, &QAction::triggered, this, [](){
+        QString fileName = QFileDialog::getSaveFileName(nullptr, "Экспорт списка комнат",
+            "rooms_export.xlsx", "Excel Files (*.xlsx);;CSV Files (*.csv)");
+        if (!fileName.isEmpty()) {
+            QMessageBox::information(nullptr, "Экспорт", "Экспорт списка комнат: " + fileName);
+            qDebug() << "Меню: Комнаты -> Экспорт списка комнат:" << fileName;
+        }
+    });
+
+    QAction *printRoomsAction = roomsMenu->addAction("&Печать списка комнат");
+    printRoomsAction->setShortcut(QKeySequence::Print);
+    connect(printRoomsAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Печать", "Печать списка комнат...");
+        qDebug() << "Меню: Комнаты -> Печать списка комнат";
+    });
+
+    roomsMenu->addSeparator();
+
+    QAction *exitAction = roomsMenu->addAction("&Выход");
+    exitAction->setShortcut(QKeySequence::Quit);
+    connect(exitAction, &QAction::triggered, this, [](){
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(nullptr, "Выход", "Вы уверены, что хотите выйти?",
+                                      QMessageBox::Yes | QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            qDebug() << "Меню: Комнаты -> Выход";
+            QApplication::quit();
+        }
+    });
+
+    // Создаем меню "Клиенты" (остается без изменений)
+    QMenu *clientsMenu = menuBar->addMenu("&Клиенты");
+
+    QAction *addClientAction = clientsMenu->addAction("&Добавить клиента");
+    connect(addClientAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Добавить клиента", "Добавление нового клиента...");
+        qDebug() << "Меню: Клиенты -> Добавить клиента";
+    });
+
+    QAction *viewClientsAction = clientsMenu->addAction("&Просмотр клиентов");
+    connect(viewClientsAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Просмотр клиентов", "Открытие списка клиентов...");
+        qDebug() << "Меню: Клиенты -> Просмотр клиентов";
+    });
+
+    QAction *editClientAction = clientsMenu->addAction("&Редактировать клиента");
+    connect(editClientAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Редактировать клиента", "Редактирование данных клиента...");
+        qDebug() << "Меню: Клиенты -> Редактировать клиента";
+    });
+
+    QAction *deleteClientAction = clientsMenu->addAction("&Удалить клиента");
+    connect(deleteClientAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Удалить клиента", "Удаление клиента...");
+        qDebug() << "Меню: Клиенты -> Удалить клиента";
+    });
+
+    // Создаем меню "Бронирование" (остается без изменений)
+    QMenu *bookingMenu = menuBar->addMenu("&Бронирование");
+
+    QAction *newBookingAction = bookingMenu->addAction("&Новое бронирование");
+    connect(newBookingAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Новое бронирование", "Создание нового бронирования...");
+        qDebug() << "Меню: Бронирование -> Новое бронирование";
+    });
+
+    QAction *viewBookingsAction = bookingMenu->addAction("&Просмотр бронирований");
+    connect(viewBookingsAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Просмотр бронирований", "Открытие списка бронирований...");
+        qDebug() << "Меню: Бронирование -> Просмотр бронирований";
+    });
+
+    QAction *editBookingAction = bookingMenu->addAction("&Изменить бронирование");
+    connect(editBookingAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Изменить бронирование", "Изменение данных бронирования...");
+        qDebug() << "Меню: Бронирование -> Изменить бронирование";
+    });
+
+    QAction *cancelBookingAction = bookingMenu->addAction("&Отменить бронирование");
+    connect(cancelBookingAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Отменить бронирование", "Отмена бронирования...");
+        qDebug() << "Меню: Бронирование -> Отменить бронирование";
+    });
+
+    QAction *checkInAction = bookingMenu->addAction("&Заселение");
+    connect(checkInAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Заселение", "Процедура заселения...");
+        qDebug() << "Меню: Бронирование -> Заселение";
+    });
+
+    QAction *checkOutAction = bookingMenu->addAction("&Выселение");
+    connect(checkOutAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Выселение", "Процедура выселения...");
+        qDebug() << "Меню: Бронирование -> Выселение";
+    });
+
+    // Создаем меню "Доп. услуги" (остается без изменений)
+    QMenu *servicesMenu = menuBar->addMenu("&Доп. услуги");
+
+    QAction *addServiceAction = servicesMenu->addAction("&Добавить услугу");
+    connect(addServiceAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Добавить услугу", "Добавление новой услуги...");
+        qDebug() << "Меню: Доп. услуги -> Добавить услугу";
+    });
+
+    QAction *viewServicesAction = servicesMenu->addAction("&Просмотр услуг");
+    connect(viewServicesAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Просмотр услуг", "Открытие списка услуг...");
+        qDebug() << "Меню: Доп. услуги -> Просмотр услуг";
+    });
+
+    QAction *assignServiceAction = servicesMenu->addAction("&Назначить услугу");
+    connect(assignServiceAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Назначить услугу", "Назначение услуги клиенту...");
+        qDebug() << "Меню: Доп. услуги -> Назначить услугу";
+    });
+
+    // Создаем меню "Статистика" (остается без изменений)
+    QMenu *statsMenu = menuBar->addMenu("&Статистика");
+
+    QAction *occupancyStatsAction = statsMenu->addAction("&Загрузка номеров");
+    connect(occupancyStatsAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Загрузка номеров", "Статистика загрузки номеров...");
+        qDebug() << "Меню: Статистика -> Загрузка номеров";
+    });
+
+    QAction *revenueStatsAction = statsMenu->addAction("&Финансовая статистика");
+    connect(revenueStatsAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Финансовая статистика", "Финансовая статистика...");
+        qDebug() << "Меню: Статистика -> Финансовая статистика";
+    });
+
+    QAction *clientStatsAction = statsMenu->addAction("&Статистика по клиентам");
+    connect(clientStatsAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Статистика по клиентам", "Статистика по клиентам...");
+        qDebug() << "Меню: Статистика -> Статистика по клиентам";
+    });
+
+    // Создаем меню "О программе" (остается без изменений)
+    QMenu *helpMenu = menuBar->addMenu("&О программе");
+
+    QAction *aboutAction = helpMenu->addAction("&О программе");
+    connect(aboutAction, &QAction::triggered, this, [](){
+        QMessageBox::about(nullptr, "О программе",
+            "<h3>Hotel Manager - Система управления бронированиями</h3>"
+            "<p>Версия: 1.0.0</p>"
+            "<p>Разработано для управления хостелом</p>"
+            "<p>© 2024 Все права защищены</p>");
+        qDebug() << "Меню: О программе -> О программе";
+    });
+
+    QAction *aboutQtAction = helpMenu->addAction("&О Qt");
+    connect(aboutQtAction, &QAction::triggered, this, [](){
+        QMessageBox::aboutQt(nullptr, "О Qt");
+        qDebug() << "Меню: О программе -> О Qt";
+    });
+
+    QAction *helpAction = helpMenu->addAction("&Справка");
+    helpAction->setShortcut(QKeySequence::HelpContents);
+    connect(helpAction, &QAction::triggered, this, [](){
+        QMessageBox::information(nullptr, "Справка", "Открытие справки...");
+        qDebug() << "Меню: О программе -> Справка";
+    });
 }
 
 void HostelManager::on_btnToday_clicked()
@@ -69,6 +291,9 @@ void HostelManager::initializeTable()
         // Настраиваем таблицу
         int totalColumns = 3 + DAYS_COUNT; // 3 основных столбца + дни
         ui->tableWidget->setColumnCount(totalColumns);
+
+        // Обновляем заголовки
+        updateTableHeaders();
 
         // Добавляем тестовые данные (15 строк для примера)
         int rowCount = 15;
@@ -119,9 +344,6 @@ void HostelManager::initializeTable()
 
         qDebug() << "Ячейки созданы";
 
-        // Теперь обновляем заголовки
-        updateTableHeaders();
-
         // Настраиваем ширину столбцов
         ui->tableWidget->setColumnWidth(0, 120);  // Номер комнаты
         ui->tableWidget->setColumnWidth(1, 100);  // Номер койки
@@ -161,7 +383,7 @@ void HostelManager::initializeTable()
 
         qDebug() << "Настройки таблицы применены";
 
-        // Обновляем цвета (но только после создания всех ячеек!)
+        // Обновляем цвета
         updateTableColors();
 
         qDebug() << "Инициализация таблицы завершена успешно";
