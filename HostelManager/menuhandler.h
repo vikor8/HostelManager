@@ -1,0 +1,4 @@
+#ifndef MENUHANDLER_H
+#define MENUHANDLER_H
+
+#endif // MENUHANDLER_H

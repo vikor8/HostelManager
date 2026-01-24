@@ -1,0 +1,4 @@
+#ifndef CLIENTSBOOKING_H
+#define CLIENTSBOOKING_H
+
+#endif // CLIENTSBOOKING_H
