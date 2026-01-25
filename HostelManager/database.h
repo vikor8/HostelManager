@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QDate>
 #include <QColor>
+#include <QVariantMap>
 
 class Database : public QObject
 {
@@ -42,6 +43,18 @@ public:
     bool addClient(const QString& firstName, const QString& lastName,
                    const QString& passport, const QString& phone,
                    const QString& email);
+    bool addClient(const QString& firstName, const QString& lastName,
+                  const QString& middleName, const QString& passport,
+                  const QString& phone, const QDate& birthDate,
+                  const QString& country);
+    bool updateClient(int clientId, const QString& firstName, const QString& lastName,
+                     const QString& middleName, const QString& passport,
+                     const QString& phone, const QDate& birthDate,
+                     const QString& country);
+    bool deleteClient(int clientId);
+    QList<QVariantMap> getAllClients();
+    QVariantMap getClientById(int clientId);
+    bool clientExists(const QString& passport);
 
     // Методы для работы с бронированиями
     bool addBooking(int bedId, int clientId, const QDate& checkInDate,

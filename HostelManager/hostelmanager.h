@@ -7,6 +7,7 @@
 #include <QMap>
 #include <QColor>
 #include "database.h"
+#include "addclientdialog.h"
 
 // Forward declarations
 class QTableWidget;
@@ -51,6 +52,12 @@ private slots:
     // Слоты для управления категориями
     void onManageCategories();
     void loadCategories(); // Загрузка категорий из базы данных
+
+    // Слоты для управления клиентами (НОВЫЕ)
+    void onViewClients();
+    void onAddClient();
+    void onEditClient();
+    void onDeleteClient();
 
 private:
     Ui::HostelManager *ui;

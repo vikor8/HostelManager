@@ -81,14 +81,16 @@ void Database::createTables()
                "UNIQUE(room_id, bed_number)"
                ")");
 
-    // Таблица клиентов
+    // Таблица клиентов (ОБНОВЛЕНА)
     query.exec("CREATE TABLE IF NOT EXISTS clients ("
                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                "first_name TEXT NOT NULL,"
                "last_name TEXT NOT NULL,"
-               "passport_number TEXT UNIQUE,"
-               "phone_number TEXT,"
-               "email TEXT,"
+               "middle_name TEXT,"
+               "passport_number TEXT UNIQUE NOT NULL,"
+               "phone_number TEXT NOT NULL,"
+               "birth_date DATE NOT NULL,"
+               "country TEXT,"
                "registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
                "notes TEXT"
                ")");
@@ -256,19 +258,27 @@ void Database::seedTestData()
                "     WHEN room_id IN (SELECT id FROM rooms WHERE category = 'Стандарт') THEN 750.00 "
                "     ELSE 500.00 END");
 
-    // Добавляем тестовых клиентов
+    // Добавляем тестовых клиентов (ОБНОВЛЕНО)
     QStringList firstNames = {"Иван", "Петр", "Анна", "Мария", "Сергей", "Ольга", "Дмитрий", "Елена"};
     QStringList lastNames = {"Иванов", "Петров", "Сидорова", "Смирнов", "Кузнецов", "Попова", "Васильев", "Павлова"};
+    QStringList middleNames = {"Иванович", "Петрович", "Сергеевна", "Алексеевна", "Николаевич", "Дмитриевна", "Владимирович", "Андреевна"};
+    QStringList countries = {"Россия", "Беларусь", "Казахстан", "Украина", "", "Россия", "Казахстан", ""};
 
     for (int i = 0; i < 8; i++) {
-        query.prepare("INSERT INTO clients (first_name, last_name, passport_number, phone_number, email) "
-                     "VALUES (?, ?, ?, ?, ?)");
+        query.prepare("INSERT INTO clients (first_name, last_name, middle_name, "
+                     "passport_number, phone_number, birth_date, country) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?)");
         query.addBindValue(firstNames[i]);
         query.addBindValue(lastNames[i]);
+        query.addBindValue(middleNames[i]);
         query.addBindValue("AB" + QString::number(1000000 + i));
         query.addBindValue("+7 999 111 22 " + QString::number(33 + i));
-        query.addBindValue(QString(firstNames[i]).toLower() + "." +
-                          QString(lastNames[i]).toLower() + "@example.com");
+
+        // Генерируем случайную дату рождения (от 20 до 60 лет)
+        QDate birthDate = QDate::currentDate().addYears(-(20 + rand() % 40));
+        query.addBindValue(birthDate.toString("yyyy-MM-dd"));
+
+        query.addBindValue(countries[i]);
         query.exec();
     }
 
@@ -442,6 +452,175 @@ QString Database::getCategoryColor(const QString& categoryName)
     return "#FFFFFF"; // Белый по умолчанию
 }
 
+bool Database::addClient(const QString& firstName, const QString& lastName,
+                        const QString& passport, const QString& phone,
+                        const QString& email)
+{
+    QSqlQuery query;
+    query.prepare("INSERT INTO clients (first_name, last_name, passport_number, phone_number, email) "
+                 "VALUES (?, ?, ?, ?, ?)");
+    query.addBindValue(firstName);
+    query.addBindValue(lastName);
+    query.addBindValue(passport);
+    query.addBindValue(phone);
+    query.addBindValue(email);
+
+    if (query.exec()) {
+        return true;
+    } else {
+        qDebug() << "Ошибка добавления клиента:" << query.lastError().text();
+        return false;
+    }
+}
+
+// НОВЫЙ метод для добавления клиента
+bool Database::addClient(const QString& firstName, const QString& lastName,
+                        const QString& middleName, const QString& passport,
+                        const QString& phone, const QDate& birthDate,
+                        const QString& country)
+{
+    QSqlQuery query;
+    query.prepare("INSERT INTO clients (first_name, last_name, middle_name, "
+                 "passport_number, phone_number, birth_date, country) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?)");
+    query.addBindValue(firstName);
+    query.addBindValue(lastName);
+    query.addBindValue(middleName.isEmpty() ? QVariant() : middleName);
+    query.addBindValue(passport);
+    query.addBindValue(phone);
+    query.addBindValue(birthDate.toString("yyyy-MM-dd"));
+    query.addBindValue(country.isEmpty() ? QVariant() : country);
+
+    if (query.exec()) {
+        return true;
+    } else {
+        qDebug() << "Ошибка добавления клиента:" << query.lastError().text();
+        return false;
+    }
+}
+
+// Метод для обновления клиента
+bool Database::updateClient(int clientId, const QString& firstName, const QString& lastName,
+                           const QString& middleName, const QString& passport,
+                           const QString& phone, const QDate& birthDate,
+                           const QString& country)
+{
+    QSqlQuery query;
+    query.prepare("UPDATE clients SET "
+                 "first_name = ?, "
+                 "last_name = ?, "
+                 "middle_name = ?, "
+                 "passport_number = ?, "
+                 "phone_number = ?, "
+                 "birth_date = ?, "
+                 "country = ? "
+                 "WHERE id = ?");
+    query.addBindValue(firstName);
+    query.addBindValue(lastName);
+    query.addBindValue(middleName.isEmpty() ? QVariant() : middleName);
+    query.addBindValue(passport);
+    query.addBindValue(phone);
+    query.addBindValue(birthDate.toString("yyyy-MM-dd"));
+    query.addBindValue(country.isEmpty() ? QVariant() : country);
+    query.addBindValue(clientId);
+
+    return query.exec();
+}
+
+// Метод для удаления клиента
+bool Database::deleteClient(int clientId)
+{
+    // Проверяем, есть ли активные бронирования у клиента
+    QSqlQuery checkQuery;
+    checkQuery.prepare("SELECT COUNT(*) FROM bookings WHERE client_id = ? AND status = 'active'");
+    checkQuery.addBindValue(clientId);
+
+    if (checkQuery.exec() && checkQuery.next()) {
+        int activeBookings = checkQuery.value(0).toInt();
+        if (activeBookings > 0) {
+            qDebug() << "Нельзя удалить клиента с активными бронированиями";
+            return false;
+        }
+    }
+
+    QSqlQuery query;
+    query.prepare("DELETE FROM clients WHERE id = ?");
+    query.addBindValue(clientId);
+
+    return query.exec();
+}
+
+// Метод для получения всех клиентов
+QList<QVariantMap> Database::getAllClients()
+{
+    QList<QVariantMap> clients;
+    QSqlQuery query("SELECT id, first_name, last_name, middle_name, "
+                   "passport_number, phone_number, birth_date, country, "
+                   "registration_date, notes "
+                   "FROM clients ORDER BY last_name, first_name");
+
+    while (query.next()) {
+        QVariantMap client;
+        client["id"] = query.value(0);
+        client["first_name"] = query.value(1);
+        client["last_name"] = query.value(2);
+        client["middle_name"] = query.value(3);
+        client["passport_number"] = query.value(4);
+        client["phone_number"] = query.value(5);
+        client["birth_date"] = query.value(6);
+        client["country"] = query.value(7);
+        client["registration_date"] = query.value(8);
+        client["notes"] = query.value(9);
+
+        clients.append(client);
+    }
+
+    return clients;
+}
+
+// Метод для получения клиента по ID
+QVariantMap Database::getClientById(int clientId)
+{
+    QSqlQuery query;
+    query.prepare("SELECT id, first_name, last_name, middle_name, "
+                 "passport_number, phone_number, birth_date, country, "
+                 "registration_date, notes "
+                 "FROM clients WHERE id = ?");
+    query.addBindValue(clientId);
+
+    if (query.exec() && query.next()) {
+        QVariantMap client;
+        client["id"] = query.value(0);
+        client["first_name"] = query.value(1);
+        client["last_name"] = query.value(2);
+        client["middle_name"] = query.value(3);
+        client["passport_number"] = query.value(4);
+        client["phone_number"] = query.value(5);
+        client["birth_date"] = query.value(6);
+        client["country"] = query.value(7);
+        client["registration_date"] = query.value(8);
+        client["notes"] = query.value(9);
+
+        return client;
+    }
+
+    return QVariantMap();
+}
+
+// Метод для проверки существования клиента по паспорту
+bool Database::clientExists(const QString& passport)
+{
+    QSqlQuery query;
+    query.prepare("SELECT COUNT(*) FROM clients WHERE passport_number = ?");
+    query.addBindValue(passport);
+
+    if (query.exec() && query.next()) {
+        return query.value(0).toInt() > 0;
+    }
+
+    return false;
+}
+
 double Database::calculateRevenue(const QDate& startDate, const QDate& endDate)
 {
     QSqlQuery query;
@@ -457,5 +636,3 @@ double Database::calculateRevenue(const QDate& startDate, const QDate& endDate)
 
     return 0.0;
 }
-
-// Остальные методы реализуются аналогично...

@@ -286,27 +286,52 @@ void HostelManager::createMenuBar()
         }
     });
 
-    // Создаем меню "Клиенты" (упрощенная версия)
+    // Создаем меню "Клиенты" (ОБНОВЛЕНО)
     QMenu *clientsMenu = menuBar->addMenu("&Клиенты");
+
     QAction *viewClientsAction = clientsMenu->addAction("&Просмотр клиентов");
-    connect(viewClientsAction, &QAction::triggered, this, [this](){
+    viewClientsAction->setShortcut(Qt::CTRL | Qt::Key_V);
+    connect(viewClientsAction, &QAction::triggered, this, &HostelManager::onViewClients);
+
+    QAction *addClientAction = clientsMenu->addAction("&Добавить клиента");
+    addClientAction->setShortcut(Qt::CTRL | Qt::Key_A);
+    connect(addClientAction, &QAction::triggered, this, &HostelManager::onAddClient);
+
+    QAction *editClientAction = clientsMenu->addAction("&Редактировать клиента");
+    editClientAction->setShortcut(Qt::CTRL | Qt::Key_E);
+    connect(editClientAction, &QAction::triggered, this, &HostelManager::onEditClient);
+
+    QAction *deleteClientAction = clientsMenu->addAction("&Удалить клиента");
+    deleteClientAction->setShortcut(Qt::CTRL | Qt::Key_D);
+    connect(deleteClientAction, &QAction::triggered, this, &HostelManager::onDeleteClient);
+
+    clientsMenu->addSeparator();
+
+    QAction *clientStatsAction = clientsMenu->addAction("&Статистика клиентов");
+    connect(clientStatsAction, &QAction::triggered, this, [this](){
         if (database->isDatabaseConnected()) {
             QSqlQuery query(database->getDatabase());
-            query.exec("SELECT first_name, last_name, phone_number, email FROM clients ORDER BY last_name");
 
-            QString clientsList = "<html><body><h3>Список клиентов</h3><table border='1' width='100%'>"
-                                 "<tr><th>Имя</th><th>Фамилия</th><th>Телефон</th><th>Email</th></tr>";
+            QString stats = "<html><body><h3>Статистика клиентов</h3><table width='100%'>";
 
-            while (query.next()) {
-                clientsList += "<tr>";
-                for (int i = 0; i < 4; ++i) {
-                    clientsList += "<td>" + query.value(i).toString() + "</td>";
-                }
-                clientsList += "</tr>";
+            query.exec("SELECT COUNT(*) FROM clients");
+            if (query.next()) {
+                stats += "<tr><td>Всего клиентов:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
             }
-            clientsList += "</table></body></html>";
 
-            QMessageBox::information(this, "Просмотр клиентов", clientsList);
+            query.exec("SELECT COUNT(DISTINCT country) FROM clients WHERE country IS NOT NULL AND country != ''");
+            if (query.next()) {
+                stats += "<tr><td>Представлено стран:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
+            }
+
+            query.exec("SELECT COUNT(*) FROM clients WHERE birth_date > date('now', '-30 years')");
+            if (query.next()) {
+                stats += "<tr><td>Моложе 30 лет:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
+            }
+
+            stats += "</table></body></html>";
+
+            QMessageBox::information(this, "Статистика клиентов", stats);
         } else {
             QMessageBox::warning(this, "Ошибка", "База данных не подключена");
         }
@@ -969,6 +994,248 @@ void HostelManager::onManageCategories()
     dialog.exec();
 }
 
+// Слот для просмотра клиентов
+void HostelManager::onViewClients()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    QList<QVariantMap> clients = database->getAllClients();
+
+    if (clients.isEmpty()) {
+        QMessageBox::information(this, "Клиенты", "В базе данных нет клиентов");
+        return;
+    }
+
+    // Создаем диалоговое окно с таблицей клиентов
+    QDialog dialog(this);
+    dialog.setWindowTitle("Список клиентов");
+    dialog.setMinimumSize(800, 500);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(&dialog);
+
+    // Таблица для отображения клиентов
+    QTableWidget *table = new QTableWidget(&dialog);
+    table->setColumnCount(8);
+    table->setHorizontalHeaderLabels({"ID", "Фамилия", "Имя", "Отчество",
+                                      "Паспорт", "Телефон", "Дата рождения", "Страна"});
+    table->setRowCount(clients.size());
+
+    // Заполняем таблицу данными
+    for (int i = 0; i < clients.size(); ++i) {
+        const QVariantMap &client = clients[i];
+
+        table->setItem(i, 0, new QTableWidgetItem(client["id"].toString()));
+        table->setItem(i, 1, new QTableWidgetItem(client["last_name"].toString()));
+        table->setItem(i, 2, new QTableWidgetItem(client["first_name"].toString()));
+        table->setItem(i, 3, new QTableWidgetItem(client["middle_name"].toString()));
+        table->setItem(i, 4, new QTableWidgetItem(client["passport_number"].toString()));
+        table->setItem(i, 5, new QTableWidgetItem(client["phone_number"].toString()));
+
+        QDate birthDate = QDate::fromString(client["birth_date"].toString(), "yyyy-MM-dd");
+        table->setItem(i, 6, new QTableWidgetItem(birthDate.toString("dd.MM.yyyy")));
+        table->setItem(i, 7, new QTableWidgetItem(client["country"].toString()));
+    }
+
+    // Настраиваем таблицу
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setAlternatingRowColors(true);
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->resizeColumnsToContents();
+
+    mainLayout->addWidget(table);
+
+    // Кнопка закрытия
+    QPushButton *closeButton = new QPushButton("Закрыть", &dialog);
+    connect(closeButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+    QHBoxLayout *buttonLayout = new QHBoxLayout();
+    buttonLayout->addStretch();
+    buttonLayout->addWidget(closeButton);
+
+    mainLayout->addLayout(buttonLayout);
+
+    dialog.exec();
+}
+
+// Слот для добавления клиента
+void HostelManager::onAddClient()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    AddClientDialog dialog(this, AddClientDialog::Add);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        // Проверяем, не существует ли уже клиент с таким паспортом
+        if (database->clientExists(dialog.passport())) {
+            QMessageBox::warning(this, "Ошибка",
+                "Клиент с таким номером паспорта уже существует!");
+            return;
+        }
+
+        // Добавляем клиента в базу данных
+        if (database->addClient(dialog.firstName(), dialog.lastName(),
+                               dialog.middleName(), dialog.passport(),
+                               dialog.phone(), dialog.birthDate(),
+                               dialog.country())) {
+            QMessageBox::information(this, "Успех", "Клиент успешно добавлен!");
+        } else {
+            QMessageBox::warning(this, "Ошибка", "Не удалось добавить клиента");
+        }
+    }
+}
+
+// Слот для редактирования клиента
+void HostelManager::onEditClient()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Получаем список клиентов для выбора
+    QList<QVariantMap> clients = database->getAllClients();
+
+    if (clients.isEmpty()) {
+        QMessageBox::information(this, "Редактирование", "В базе данных нет клиентов");
+        return;
+    }
+
+    // Создаем список для QInputDialog
+    QStringList clientList;
+    QMap<QString, int> clientIdMap;
+
+    for (const auto &client : clients) {
+        QString displayText = QString("%1 %2 %3 (%4)")
+            .arg(client["last_name"].toString())
+            .arg(client["first_name"].toString())
+            .arg(client["middle_name"].toString())
+            .arg(client["passport_number"].toString());
+
+        clientList << displayText;
+        clientIdMap[displayText] = client["id"].toInt();
+    }
+
+    bool ok;
+    QString selectedClient = QInputDialog::getItem(this, "Выбор клиента",
+                                                  "Выберите клиента для редактирования:",
+                                                  clientList, 0, false, &ok);
+
+    if (!ok || selectedClient.isEmpty()) {
+        return;
+    }
+
+    int clientId = clientIdMap.value(selectedClient);
+    QVariantMap clientData = database->getClientById(clientId);
+
+    if (clientData.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось загрузить данные клиента");
+        return;
+    }
+
+    // Создаем диалог редактирования
+    AddClientDialog dialog(this, AddClientDialog::Edit, clientId);
+
+    // Заполняем поля данными клиента
+    dialog.setClientData(
+        clientData["first_name"].toString(),
+        clientData["last_name"].toString(),
+        clientData["middle_name"].toString(),
+        clientData["passport_number"].toString(),
+        clientData["phone_number"].toString(),
+        QDate::fromString(clientData["birth_date"].toString(), "yyyy-MM-dd"),
+        clientData["country"].toString()
+    );
+
+    if (dialog.exec() == QDialog::Accepted) {
+        // Проверяем, не изменился ли паспорт на уже существующий
+        QString newPassport = dialog.passport();
+        QString oldPassport = clientData["passport_number"].toString();
+
+        if (newPassport != oldPassport && database->clientExists(newPassport)) {
+            QMessageBox::warning(this, "Ошибка",
+                "Клиент с таким номером паспорта уже существует!");
+            return;
+        }
+
+        // Обновляем данные клиента
+        if (database->updateClient(clientId,
+                                  dialog.firstName(), dialog.lastName(),
+                                  dialog.middleName(), dialog.passport(),
+                                  dialog.phone(), dialog.birthDate(),
+                                  dialog.country())) {
+            QMessageBox::information(this, "Успех", "Данные клиента обновлены!");
+        } else {
+            QMessageBox::warning(this, "Ошибка", "Не удалось обновить данные клиента");
+        }
+    }
+}
+
+// Слот для удаления клиента
+void HostelManager::onDeleteClient()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Получаем список клиентов для выбора
+    QList<QVariantMap> clients = database->getAllClients();
+
+    if (clients.isEmpty()) {
+        QMessageBox::information(this, "Удаление", "В базе данных нет клиентов");
+        return;
+    }
+
+    // Создаем список для QInputDialog
+    QStringList clientList;
+    QMap<QString, int> clientIdMap;
+
+    for (const auto &client : clients) {
+        QString displayText = QString("%1 %2 %3 (%4)")
+            .arg(client["last_name"].toString())
+            .arg(client["first_name"].toString())
+            .arg(client["middle_name"].toString())
+            .arg(client["passport_number"].toString());
+
+        clientList << displayText;
+        clientIdMap[displayText] = client["id"].toInt();
+    }
+
+    bool ok;
+    QString selectedClient = QInputDialog::getItem(this, "Удаление клиента",
+                                                  "Выберите клиента для удаления:",
+                                                  clientList, 0, false, &ok);
+
+    if (!ok || selectedClient.isEmpty()) {
+        return;
+    }
+
+    int clientId = clientIdMap.value(selectedClient);
+
+    // Запрашиваем подтверждение
+    QMessageBox::StandardButton confirm = QMessageBox::question(this, "Подтверждение",
+        "Вы уверены, что хотите удалить выбранного клиента?\n\n"
+        "Это действие нельзя отменить.",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+    if (confirm == QMessageBox::Yes) {
+        if (database->deleteClient(clientId)) {
+            QMessageBox::information(this, "Успех", "Клиент успешно удален!");
+        } else {
+            QMessageBox::warning(this, "Ошибка",
+                "Не удалось удалить клиента.\n"
+                "Возможно, у клиента есть активные бронирования.");
+        }
+    }
+}
+
 void HostelManager::on_btnToday_clicked()
 {
     qDebug() << "Кнопка 'Сегодня' нажата";
@@ -1230,7 +1497,7 @@ void HostelManager::updateTableColors()
                 break;
             }
 
-            // Получаем номер комнаты и койки из таблицу
+            // Получаем номер комнаты и койки из таблицы
             QTableWidgetItem *roomItem = ui->tableWidget->item(row, 0);
             QTableWidgetItem *bedItem = ui->tableWidget->item(row, 1);
 
