@@ -27,7 +27,7 @@ QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 namespace {
 struct qt_meta_stringdata_HostelManager_t {
-    uint offsetsAndSizes[22];
+    uint offsetsAndSizes[26];
     char stringdata0[14];
     char stringdata1[20];
     char stringdata2[1];
@@ -39,6 +39,8 @@ struct qt_meta_stringdata_HostelManager_t {
     char stringdata8[10];
     char stringdata9[11];
     char stringdata10[13];
+    char stringdata11[19];
+    char stringdata12[15];
 };
 #define QT_MOC_LITERAL(ofs, len) \
     uint(sizeof(qt_meta_stringdata_HostelManager_t::offsetsAndSizes) + ofs), len 
@@ -54,7 +56,9 @@ Q_CONSTINIT static const qt_meta_stringdata_HostelManager_t qt_meta_stringdata_H
         QT_MOC_LITERAL(102, 18),  // "updateTableHeaders"
         QT_MOC_LITERAL(121, 9),  // "onAddRoom"
         QT_MOC_LITERAL(131, 10),  // "onEditRoom"
-        QT_MOC_LITERAL(142, 12)   // "onDeleteRoom"
+        QT_MOC_LITERAL(142, 12),  // "onDeleteRoom"
+        QT_MOC_LITERAL(155, 18),  // "onManageCategories"
+        QT_MOC_LITERAL(174, 14)   // "loadCategories"
     },
     "HostelManager",
     "on_btnToday_clicked",
@@ -66,7 +70,9 @@ Q_CONSTINIT static const qt_meta_stringdata_HostelManager_t qt_meta_stringdata_H
     "updateTableHeaders",
     "onAddRoom",
     "onEditRoom",
-    "onDeleteRoom"
+    "onDeleteRoom",
+    "onManageCategories",
+    "loadCategories"
 };
 #undef QT_MOC_LITERAL
 } // unnamed namespace
@@ -77,7 +83,7 @@ Q_CONSTINIT static const uint qt_meta_data_HostelManager[] = {
       10,       // revision
        0,       // classname
        0,    0, // classinfo
-       8,   14, // methods
+      10,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -85,19 +91,23 @@ Q_CONSTINIT static const uint qt_meta_data_HostelManager[] = {
        0,       // signalCount
 
  // slots: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    0,   62,    2, 0x08,    1 /* Private */,
-       3,    0,   63,    2, 0x08,    2 /* Private */,
-       4,    1,   64,    2, 0x08,    3 /* Private */,
-       6,    0,   67,    2, 0x08,    5 /* Private */,
-       7,    0,   68,    2, 0x08,    6 /* Private */,
-       8,    0,   69,    2, 0x08,    7 /* Private */,
-       9,    0,   70,    2, 0x08,    8 /* Private */,
-      10,    0,   71,    2, 0x08,    9 /* Private */,
+       1,    0,   74,    2, 0x08,    1 /* Private */,
+       3,    0,   75,    2, 0x08,    2 /* Private */,
+       4,    1,   76,    2, 0x08,    3 /* Private */,
+       6,    0,   79,    2, 0x08,    5 /* Private */,
+       7,    0,   80,    2, 0x08,    6 /* Private */,
+       8,    0,   81,    2, 0x08,    7 /* Private */,
+       9,    0,   82,    2, 0x08,    8 /* Private */,
+      10,    0,   83,    2, 0x08,    9 /* Private */,
+      11,    0,   84,    2, 0x08,   10 /* Private */,
+      12,    0,   85,    2, 0x08,   11 /* Private */,
 
  // slots: parameters
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void, QMetaType::QDate,    5,
+    QMetaType::Void,
+    QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
@@ -132,6 +142,10 @@ Q_CONSTINIT const QMetaObject HostelManager::staticMetaObject = { {
         // method 'onEditRoom'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'onDeleteRoom'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'onManageCategories'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'loadCategories'
         QtPrivate::TypeAndForceComplete<void, std::false_type>
     >,
     nullptr
@@ -151,6 +165,8 @@ void HostelManager::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _i
         case 5: _t->onAddRoom(); break;
         case 6: _t->onEditRoom(); break;
         case 7: _t->onDeleteRoom(); break;
+        case 8: _t->onManageCategories(); break;
+        case 9: _t->loadCategories(); break;
         default: ;
         }
     }
@@ -175,13 +191,13 @@ int HostelManager::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 8)
+        if (_id < 10)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 8;
+        _id -= 10;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 8)
+        if (_id < 10)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 8;
+        _id -= 10;
     }
     return _id;
 }

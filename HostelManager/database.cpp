@@ -1,4 +1,5 @@
 #include "database.h"
+#include <QColor>
 
 Database::Database(QObject *parent) : QObject(parent)
 {
@@ -50,14 +51,23 @@ void Database::createTables()
 {
     QSqlQuery query;
 
-    // Таблица комнат
+    // Таблица категорий (новая таблица)
+    query.exec("CREATE TABLE IF NOT EXISTS room_categories ("
+               "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+               "category_name TEXT UNIQUE NOT NULL,"
+               "color TEXT DEFAULT '#FFFFFF',"
+               "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+               ")");
+
+    // Таблица комнат (обновляем внешний ключ)
     query.exec("CREATE TABLE IF NOT EXISTS rooms ("
                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                "room_number TEXT UNIQUE NOT NULL,"
                "category TEXT NOT NULL,"
                "beds_count INTEGER DEFAULT 4,"
                "description TEXT,"
-               "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+               "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+               "FOREIGN KEY (category) REFERENCES room_categories(category_name)"
                ")");
 
     // Таблица кроватей
@@ -207,6 +217,22 @@ void Database::seedTestData()
 {
     QSqlQuery query;
 
+    // Добавляем стандартные категории
+    QStringList defaultCategories = {"Эконом", "Стандарт", "Комфорт", "Люкс"};
+    QMap<QString, QString> defaultColors = {
+        {"Эконом", "#E6F3FF"},    // Светло-голубой
+        {"Стандарт", "#E6FFE6"},  // Светло-зеленый
+        {"Комфорт", "#FFF9E6"},   // Светло-желтый
+        {"Люкс", "#FFE6E6"}       // Светло-красный
+    };
+
+    for (const QString& category : defaultCategories) {
+        query.prepare("INSERT OR IGNORE INTO room_categories (category_name, color) VALUES (?, ?)");
+        query.addBindValue(category);
+        query.addBindValue(defaultColors.value(category, "#FFFFFF"));
+        query.exec();
+    }
+
     // Добавляем тестовые комнаты
     QStringList rooms = {"101", "102", "103", "104", "105", "201", "202", "203", "204", "205"};
     QMap<QString, QString> categories = {
@@ -340,6 +366,80 @@ QList<QString> Database::getAllRooms()
     }
 
     return rooms;
+}
+
+// Метод для добавления категории
+bool Database::addCategory(const QString& categoryName, const QString& color)
+{
+    QSqlQuery query;
+    query.prepare("INSERT INTO room_categories (category_name, color) VALUES (?, ?)");
+    query.addBindValue(categoryName);
+    query.addBindValue(color);
+
+    return query.exec();
+}
+
+// Метод для удаления категории
+bool Database::removeCategory(const QString& categoryName)
+{
+    // Проверяем, используется ли категория в комнатах
+    QSqlQuery checkQuery;
+    checkQuery.prepare("SELECT COUNT(*) FROM rooms WHERE category = ?");
+    checkQuery.addBindValue(categoryName);
+
+    if (checkQuery.exec() && checkQuery.next()) {
+        int usageCount = checkQuery.value(0).toInt();
+        if (usageCount > 0) {
+            qDebug() << "Категория" << categoryName << "используется в" << usageCount << "комнатах";
+            return false;
+        }
+    }
+
+    QSqlQuery query;
+    query.prepare("DELETE FROM room_categories WHERE category_name = ?");
+    query.addBindValue(categoryName);
+
+    return query.exec();
+}
+
+// Метод для обновления цвета категории
+bool Database::updateCategoryColor(const QString& categoryName, const QString& color)
+{
+    QSqlQuery query;
+    query.prepare("UPDATE room_categories SET color = ? WHERE category_name = ?");
+    query.addBindValue(color);
+    query.addBindValue(categoryName);
+
+    return query.exec();
+}
+
+// Метод для получения всех категорий
+QList<QPair<QString, QString>> Database::getAllCategories()
+{
+    QList<QPair<QString, QString>> categories;
+    QSqlQuery query("SELECT category_name, color FROM room_categories ORDER BY category_name");
+
+    while (query.next()) {
+        QString name = query.value(0).toString();
+        QString color = query.value(1).toString();
+        categories.append(qMakePair(name, color));
+    }
+
+    return categories;
+}
+
+// Метод для получения цвета категории
+QString Database::getCategoryColor(const QString& categoryName)
+{
+    QSqlQuery query;
+    query.prepare("SELECT color FROM room_categories WHERE category_name = ?");
+    query.addBindValue(categoryName);
+
+    if (query.exec() && query.next()) {
+        return query.value(0).toString();
+    }
+
+    return "#FFFFFF"; // Белый по умолчанию
 }
 
 double Database::calculateRevenue(const QDate& startDate, const QDate& endDate)

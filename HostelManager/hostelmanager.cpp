@@ -30,6 +30,11 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QListWidget>
+#include <QColorDialog>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QGroupBox>
 
 HostelManager::HostelManager(QWidget *parent)
     : QMainWindow(parent)
@@ -92,12 +97,29 @@ QString HostelManager::monthToRussian(const QString& month) const
     return russianMonth;
 }
 
+// Метод для получения цвета категории
+QColor HostelManager::getCategoryColor(const QString& category) const
+{
+    if (categoryColors.contains(category)) {
+        return categoryColors.value(category);
+    }
+
+    // Возвращаем цвет по умолчанию в зависимости от категории
+    if (category == "Эконом") return QColor(230, 243, 255); // Светло-голубой
+    if (category == "Стандарт") return QColor(230, 255, 230); // Светло-зеленый
+    if (category == "Комфорт") return QColor(255, 249, 230); // Светло-желтый
+    if (category == "Люкс") return QColor(255, 230, 230); // Светло-красный
+
+    return QColor(240, 240, 240); // Светло-серый по умолчанию
+}
+
 void HostelManager::initializeDatabase()
 {
     if (database->initializeDatabase()) {
         qDebug() << "База данных успешно инициализирована";
         ui->lblStatus->setText("База данных: подключена");
         updateRoomIdMap(); // Обновляем карту ID комнат
+        loadCategories(); // Загружаем категории
     } else {
         qDebug() << "Ошибка инициализации базы данных";
         ui->lblStatus->setText("База данных: не подключена (демо-режим)");
@@ -119,6 +141,29 @@ void HostelManager::updateRoomIdMap()
     }
 }
 
+void HostelManager::loadCategories()
+{
+    categoryColors.clear();
+
+    if (database->isDatabaseConnected()) {
+        QList<QPair<QString, QString>> categories = database->getAllCategories();
+
+        for (const auto& category : categories) {
+            QString name = category.first;
+            QString colorStr = category.second;
+            QColor color(colorStr);
+
+            if (!color.isValid()) {
+                color = QColor("#FFFFFF"); // Белый по умолчанию
+            }
+
+            categoryColors.insert(name, color);
+        }
+
+        qDebug() << "Загружено категорий:" << categoryColors.size();
+    }
+}
+
 void HostelManager::createMenuBar()
 {
     // Создаем меню бар
@@ -135,6 +180,7 @@ void HostelManager::createMenuBar()
             QMessageBox::information(this, "База данных", "База данных успешно подключена");
             ui->lblStatus->setText("База данных: подключена");
             updateRoomIdMap();
+            loadCategories();
             initializeTable();
         } else {
             QMessageBox::warning(this, "Ошибка", "Не удалось подключиться к базе данных");
@@ -179,6 +225,9 @@ void HostelManager::createMenuBar()
             query.exec("SELECT COUNT(*) FROM bookings WHERE status = 'active'");
             if (query.next()) stats += "<tr><td>Активных бронирований:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
 
+            query.exec("SELECT COUNT(*) FROM room_categories");
+            if (query.next()) stats += "<tr><td>Категорий комнат:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
+
             stats += "</table></body></html>";
 
             QMessageBox::information(this, "Статистика базы данных", stats);
@@ -201,6 +250,13 @@ void HostelManager::createMenuBar()
     QAction *deleteRoomAction = roomsMenu->addAction("&Удалить комнату");
     deleteRoomAction->setShortcut(Qt::CTRL | Qt::Key_D);
     connect(deleteRoomAction, &QAction::triggered, this, &HostelManager::onDeleteRoom);
+
+    roomsMenu->addSeparator();
+
+    // Добавляем кнопку "Категории"
+    QAction *manageCategoriesAction = roomsMenu->addAction("&Категории комнат");
+    manageCategoriesAction->setShortcut(Qt::CTRL | Qt::Key_C);
+    connect(manageCategoriesAction, &QAction::triggered, this, &HostelManager::onManageCategories);
 
     roomsMenu->addSeparator();
 
@@ -277,6 +333,13 @@ void HostelManager::onAddRoom()
         return;
     }
 
+    // Получаем список категорий из базы данных
+    QList<QPair<QString, QString>> categories = database->getAllCategories();
+    if (categories.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Нет доступных категорий. Сначала добавьте категории.");
+        return;
+    }
+
     // Создаем диалоговое окно
     QDialog dialog(this);
     dialog.setWindowTitle("Добавить новую комнату");
@@ -294,8 +357,20 @@ void HostelManager::onAddRoom()
     bedsCountSpin->setValue(4);
     layout->addRow("Количество коек:", bedsCountSpin);
 
+    // Комбобокс с категориями из базы данных
     QComboBox *categoryCombo = new QComboBox(&dialog);
-    categoryCombo->addItems(QStringList() << "Эконом" << "Стандарт" << "Комфорт" << "Люкс");
+    for (const auto& category : categories) {
+        categoryCombo->addItem(category.first);
+
+        // Устанавливаем цвет фона для элемента (ИСПРАВЛЕНО)
+        QColor color(category.second);
+        if (color.isValid()) {
+            categoryCombo->setItemData(categoryCombo->count() - 1, QBrush(color), Qt::BackgroundRole);
+            categoryCombo->setItemData(categoryCombo->count() - 1,
+                                      QColor(color.lightness() > 128 ? Qt::black : Qt::white),
+                                      Qt::ForegroundRole);
+        }
+    }
     layout->addRow("Категория:", categoryCombo);
 
     QDoubleSpinBox *priceSpin = new QDoubleSpinBox(&dialog);
@@ -354,19 +429,6 @@ void HostelManager::onAddRoom()
 
             if (!query.exec()) {
                 QMessageBox::warning(this, "Ошибка", "Не удалось добавить комнату: " + query.lastError().text());
-                // Восстанавливаем триггер
-                QSqlQuery restoreTriggerQuery(database->getDatabase());
-                restoreTriggerQuery.exec(
-                    "CREATE TRIGGER create_beds_after_room_insert "
-                    "AFTER INSERT ON rooms "
-                    "BEGIN "
-                    "   INSERT INTO beds (room_id, bed_number, price_per_day) "
-                    "   SELECT NEW.id, 1, 500.00 "
-                    "   UNION ALL SELECT NEW.id, 2, 500.00 "
-                    "   UNION ALL SELECT NEW.id, 3, 500.00 "
-                    "   UNION ALL SELECT NEW.id, 4, 500.00; "
-                    "END"
-                );
                 return;
             }
 
@@ -381,28 +443,11 @@ void HostelManager::onAddRoom()
                 bedQuery.addBindValue(pricePerDay);
 
                 if (!bedQuery.exec()) {
-                    // Если ошибка, но не из-за дубликата
                     if (!bedQuery.lastError().text().contains("UNIQUE constraint")) {
-                        QMessageBox::warning(this, "Ошибка",
-                            QString("Не удалось добавить койку %1: %2").arg(i).arg(bedQuery.lastError().text()));
+                        qDebug() << "Ошибка при добавлении койки:" << bedQuery.lastError().text();
                     }
                 }
             }
-
-            // Восстанавливаем триггер
-            QSqlQuery restoreTriggerQuery(database->getDatabase());
-            restoreTriggerQuery.exec(
-                "CREATE TRIGGER IF NOT EXISTS create_beds_after_room_insert "
-                "AFTER INSERT ON rooms "
-                "BEGIN "
-                "   -- Триггер будет создавать только если комнат меньше 4 коек "
-                "   INSERT INTO beds (room_id, bed_number, price_per_day) "
-                "   SELECT NEW.id, 1, 500.00 WHERE NEW.beds_count >= 1 "
-                "   UNION ALL SELECT NEW.id, 2, 500.00 WHERE NEW.beds_count >= 2 "
-                "   UNION ALL SELECT NEW.id, 3, 500.00 WHERE NEW.beds_count >= 3 "
-                "   UNION ALL SELECT NEW.id, 4, 500.00 WHERE NEW.beds_count >= 4; "
-                "END"
-            );
 
             QMessageBox::information(this, "Успех",
                 QString("Комната %1 успешно добавлена!\nКатегория: %2\nКоличество коек: %3\nЦена за день: %4 руб.")
@@ -412,19 +457,6 @@ void HostelManager::onAddRoom()
             initializeTable();
 
         } catch (const std::exception& e) {
-            // Восстанавливаем триггер в случае ошибки
-            QSqlQuery restoreTriggerQuery(database->getDatabase());
-            restoreTriggerQuery.exec(
-                "CREATE TRIGGER IF NOT EXISTS create_beds_after_room_insert "
-                "AFTER INSERT ON rooms "
-                "BEGIN "
-                "   INSERT INTO beds (room_id, bed_number, price_per_day) "
-                "   SELECT NEW.id, 1, 500.00 "
-                "   UNION ALL SELECT NEW.id, 2, 500.00 "
-                "   UNION ALL SELECT NEW.id, 3, 500.00 "
-                "   UNION ALL SELECT NEW.id, 4, 500.00; "
-                "END"
-            );
             QMessageBox::warning(this, "Ошибка", QString("Ошибка при добавлении комнаты: %1").arg(e.what()));
         }
     }
@@ -484,6 +516,9 @@ void HostelManager::onEditRoom()
         currentPrice = priceQuery.value(0).toDouble();
     }
 
+    // Получаем список категорий из базы данных
+    QList<QPair<QString, QString>> categories = database->getAllCategories();
+
     // Создаем диалоговое окно
     QDialog dialog(this);
     dialog.setWindowTitle("Редактировать комнату: " + roomNumber);
@@ -500,9 +535,27 @@ void HostelManager::onEditRoom()
     bedsCountSpin->setValue(currentBedsCount);
     layout->addRow("Количество коек:", bedsCountSpin);
 
+    // Комбобокс с категориями из базы данных
     QComboBox *categoryCombo = new QComboBox(&dialog);
-    categoryCombo->addItems(QStringList() << "Эконом" << "Стандарт" << "Комфорт" << "Люкс");
-    categoryCombo->setCurrentText(currentCategory);
+    for (const auto& category : categories) {
+        categoryCombo->addItem(category.first);
+
+        // Устанавливаем цвет фона для элемента (ИСПРАВЛЕНО)
+        QColor color(category.second);
+        if (color.isValid()) {
+            categoryCombo->setItemData(categoryCombo->count() - 1, QBrush(color), Qt::BackgroundRole);
+            categoryCombo->setItemData(categoryCombo->count() - 1,
+                                      QColor(color.lightness() > 128 ? Qt::black : Qt::white),
+                                      Qt::ForegroundRole);
+        }
+    }
+
+    // Устанавливаем текущую категорию
+    int index = categoryCombo->findText(currentCategory);
+    if (index >= 0) {
+        categoryCombo->setCurrentIndex(index);
+    }
+
     layout->addRow("Категория:", categoryCombo);
 
     QDoubleSpinBox *priceSpin = new QDoubleSpinBox(&dialog);
@@ -595,6 +648,7 @@ void HostelManager::onEditRoom()
 
         QMessageBox::information(this, "Успех", "Данные комнаты обновлены!");
         updateRoomIdMap();
+        loadCategories();
         initializeTable();
     }
 }
@@ -688,6 +742,231 @@ void HostelManager::onDeleteRoom()
             QMessageBox::warning(this, "Ошибка", "Ошибка при удалении: " + deleteQuery.lastError().text());
         }
     }
+}
+
+// Слот для управления категориями
+void HostelManager::onManageCategories()
+{
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Создаем диалоговое окно
+    QDialog dialog(this);
+    dialog.setWindowTitle("Управление категориями комнат");
+    dialog.setFixedSize(500, 400);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(&dialog);
+
+    // Список категорий
+    QListWidget *categoriesList = new QListWidget(&dialog);
+    categoriesList->setAlternatingRowColors(true);
+    mainLayout->addWidget(new QLabel("Список категорий:", &dialog));
+    mainLayout->addWidget(categoriesList);
+
+    // Форма для добавления/редактирования категории
+    QGroupBox *editGroup = new QGroupBox("Добавить/редактировать категорию", &dialog);
+    QFormLayout *editLayout = new QFormLayout(editGroup);
+
+    QLineEdit *categoryNameEdit = new QLineEdit(&dialog);
+    categoryNameEdit->setPlaceholderText("Введите название категории");
+    editLayout->addRow("Название:", categoryNameEdit);
+
+    // Виджет для выбора цвета
+    QHBoxLayout *colorLayout = new QHBoxLayout();
+    QPushButton *colorButton = new QPushButton("Выбрать цвет", &dialog);
+    QLabel *colorPreview = new QLabel(&dialog);
+    colorPreview->setFixedSize(50, 25);
+    colorPreview->setFrameStyle(QFrame::Panel | QFrame::Sunken);
+    colorPreview->setStyleSheet("background-color: #FFFFFF;");
+
+    colorLayout->addWidget(colorButton);
+    colorLayout->addWidget(colorPreview);
+    colorLayout->addStretch();
+
+    editLayout->addRow("Цвет:", colorLayout);
+
+    // Кнопки действий
+    QHBoxLayout *buttonsLayout = new QHBoxLayout();
+    QPushButton *addButton = new QPushButton("Добавить", &dialog);
+    QPushButton *updateButton = new QPushButton("Обновить", &dialog);
+    QPushButton *deleteButton = new QPushButton("Удалить", &dialog);
+    QPushButton *closeButton = new QPushButton("Закрыть", &dialog);
+
+    buttonsLayout->addWidget(addButton);
+    buttonsLayout->addWidget(updateButton);
+    buttonsLayout->addWidget(deleteButton);
+    buttonsLayout->addStretch();
+    buttonsLayout->addWidget(closeButton);
+
+    editLayout->addRow(buttonsLayout);
+
+    mainLayout->addWidget(editGroup);
+
+    // Загружаем категории из базы данных в список
+    QList<QPair<QString, QString>> categories = database->getAllCategories();
+    for (const auto& category : categories) {
+        QString name = category.first;
+        QString colorStr = category.second;
+
+        QListWidgetItem *item = new QListWidgetItem(name);
+        QColor color(colorStr);
+        if (!color.isValid()) {
+            color = QColor("#FFFFFF");
+        }
+
+        item->setBackground(color);
+        item->setForeground(color.lightness() > 128 ? QColor(Qt::black) : QColor(Qt::white));
+        item->setToolTip(QString("Цвет: %1").arg(colorStr));
+
+        categoriesList->addItem(item);
+    }
+
+    // Текущий выбранный цвет
+    QColor currentColor = QColor("#FFFFFF");
+
+    // Обработчики событий
+    connect(colorButton, &QPushButton::clicked, [&]() {
+        QColor color = QColorDialog::getColor(currentColor, &dialog, "Выберите цвет категории");
+        if (color.isValid()) {
+            currentColor = color;
+            colorPreview->setStyleSheet(QString("background-color: %1; border: 1px solid #000000;")
+                                       .arg(currentColor.name()));
+        }
+    });
+
+    connect(categoriesList, &QListWidget::itemClicked, [&](QListWidgetItem *item) {
+        QString categoryName = item->text();
+        categoryNameEdit->setText(categoryName);
+
+        // Получаем цвет категории из базы данных
+        QString colorStr = database->getCategoryColor(categoryName);
+        currentColor = QColor(colorStr);
+        if (!currentColor.isValid()) {
+            currentColor = QColor("#FFFFFF");
+        }
+
+        colorPreview->setStyleSheet(QString("background-color: %1; border: 1px solid #000000;")
+                                   .arg(currentColor.name()));
+    });
+
+    connect(addButton, &QPushButton::clicked, [&]() {
+        QString categoryName = categoryNameEdit->text().trimmed();
+
+        if (categoryName.isEmpty()) {
+            QMessageBox::warning(&dialog, "Ошибка", "Введите название категории");
+            return;
+        }
+
+        // Проверяем, существует ли уже такая категория
+        for (const auto& category : categories) {
+            if (category.first.toLower() == categoryName.toLower()) {
+                QMessageBox::warning(&dialog, "Ошибка", "Категория с таким названием уже существует");
+                return;
+            }
+        }
+
+        // Добавляем категорию в базу данных
+        if (database->addCategory(categoryName, currentColor.name())) {
+            QMessageBox::information(&dialog, "Успех", "Категория добавлена");
+
+            // Обновляем список
+            QListWidgetItem *item = new QListWidgetItem(categoryName);
+            item->setBackground(currentColor);
+            item->setForeground(currentColor.lightness() > 128 ? QColor(Qt::black) : QColor(Qt::white));
+            item->setToolTip(QString("Цвет: %1").arg(currentColor.name()));
+            categoriesList->addItem(item);
+
+            loadCategories(); // Перезагружаем категории
+            categoryNameEdit->clear();
+        } else {
+            QMessageBox::warning(&dialog, "Ошибка", "Не удалось добавить категорию");
+        }
+    });
+
+    connect(updateButton, &QPushButton::clicked, [&]() {
+        QString categoryName = categoryNameEdit->text().trimmed();
+
+        if (categoryName.isEmpty()) {
+            QMessageBox::warning(&dialog, "Ошибка", "Введите название категории");
+            return;
+        }
+
+        // Обновляем цвет категории в базе данных
+        if (database->updateCategoryColor(categoryName, currentColor.name())) {
+            QMessageBox::information(&dialog, "Успех", "Цвет категории обновлен");
+
+            // Обновляем элемент в списке
+            for (int i = 0; i < categoriesList->count(); ++i) {
+                QListWidgetItem *item = categoriesList->item(i);
+                if (item->text() == categoryName) {
+                    item->setBackground(currentColor);
+                    item->setForeground(currentColor.lightness() > 128 ? QColor(Qt::black) : QColor(Qt::white));
+                    item->setToolTip(QString("Цвет: %1").arg(currentColor.name()));
+                    break;
+                }
+            }
+
+            loadCategories(); // Перезагружаем категории
+            updateTableColors(); // Обновляем цвета в таблице
+        } else {
+            QMessageBox::warning(&dialog, "Ошибка", "Не удалось обновить категорию");
+        }
+    });
+
+    connect(deleteButton, &QPushButton::clicked, [&]() {
+        QString categoryName = categoryNameEdit->text().trimmed();
+
+        if (categoryName.isEmpty()) {
+            QMessageBox::warning(&dialog, "Ошибка", "Выберите категорию для удаления");
+            return;
+        }
+
+        // Проверяем, используется ли категория
+        QSqlQuery checkQuery(database->getDatabase());
+        checkQuery.prepare("SELECT COUNT(*) FROM rooms WHERE category = ?");
+        checkQuery.addBindValue(categoryName);
+
+        if (checkQuery.exec() && checkQuery.next()) {
+            int usageCount = checkQuery.value(0).toInt();
+            if (usageCount > 0) {
+                QMessageBox::warning(&dialog, "Ошибка",
+                    QString("Категория используется в %1 комнатах.\nСначала измените категории этих комнат.")
+                        .arg(usageCount));
+                return;
+            }
+        }
+
+        QMessageBox::StandardButton reply = QMessageBox::question(&dialog, "Подтверждение",
+            QString("Вы уверены, что хотите удалить категорию \"%1\"?").arg(categoryName),
+            QMessageBox::Yes | QMessageBox::No);
+
+        if (reply == QMessageBox::Yes) {
+            if (database->removeCategory(categoryName)) {
+                QMessageBox::information(&dialog, "Успех", "Категория удалена");
+
+                // Удаляем элемент из списка
+                for (int i = 0; i < categoriesList->count(); ++i) {
+                    QListWidgetItem *item = categoriesList->item(i);
+                    if (item->text() == categoryName) {
+                        delete categoriesList->takeItem(i);
+                        break;
+                    }
+                }
+
+                loadCategories(); // Перезагружаем категории
+                categoryNameEdit->clear();
+                colorPreview->setStyleSheet("background-color: #FFFFFF;");
+            } else {
+                QMessageBox::warning(&dialog, "Ошибка", "Не удалось удалить категорию");
+            }
+        }
+    });
+
+    connect(closeButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+    dialog.exec();
 }
 
 void HostelManager::on_btnToday_clicked()
@@ -901,8 +1180,7 @@ void HostelManager::updateTableColors()
             return;
         }
 
-        // Цвета
-        QColor freeColor(240, 240, 240);      // Светло-серый цвет для свободных
+        // Цвета для статусов
         QColor occupiedColor(200, 200, 0);    // Желтый для занятых
         QColor weekendColor(220, 220, 255);   // Светло-синий для выходных
 
@@ -952,7 +1230,7 @@ void HostelManager::updateTableColors()
                 break;
             }
 
-            // Получаем номер комнаты и койки из таблицы
+            // Получаем номер комнаты и койки из таблицу
             QTableWidgetItem *roomItem = ui->tableWidget->item(row, 0);
             QTableWidgetItem *bedItem = ui->tableWidget->item(row, 1);
 
@@ -964,13 +1242,23 @@ void HostelManager::updateTableColors()
             QString bedNumber = bedItem->text();
             QString key = roomNumber + "_" + bedNumber;
 
-            // Устанавливаем разные цвета фона для информационных колонок
-            QColor infoColor = (row % 2 == 0) ? QColor(255, 255, 255) : QColor(245, 245, 245);
+            // Получаем категорию комнаты
+            QTableWidgetItem *categoryItem = ui->tableWidget->item(row, 2);
+            QString category = categoryItem ? categoryItem->text() : "Стандарт";
 
+            // Получаем цвет категории
+            QColor categoryColor = getCategoryColor(category);
+
+            // Устанавливаем цвет фона для информационных колонок на основе категории
             for (int col = 0; col < 3; ++col) {
                 QTableWidgetItem *item = ui->tableWidget->item(row, col);
                 if (item) {
-                    item->setBackground(infoColor);
+                    // Делаем цвет немного светлее для лучшей читаемости
+                    QColor cellColor = categoryColor.lighter(110);
+                    item->setBackground(QBrush(cellColor));
+
+                    // Настраиваем цвет текста для контраста
+                    item->setForeground(QColor(cellColor.lightness() > 150 ? Qt::black : Qt::white));
                 }
             }
 
@@ -996,25 +1284,33 @@ void HostelManager::updateTableColors()
 
                     // Устанавливаем цвет в зависимости от статуса
                     if (isOccupied) {
-                        item->setBackground(occupiedColor);
+                        item->setBackground(QBrush(occupiedColor));
                         item->setText("●"); // Маркер занятости
-                        item->setForeground(Qt::black);
+                        item->setForeground(QColor(Qt::black));
                     } else {
-                        // Для свободных: выходные - светло-синий, рабочие - светло-серый
-                        QColor baseColor = isWeekend ? weekendColor : freeColor;
-                        item->setBackground(baseColor);
+                        // Для свободных: используем цвет категории, для выходных - смешиваем с weekendColor
+                        QColor baseColor = categoryColor.lighter(120);
+                        if (isWeekend) {
+                            // Смешиваем цвет категории с цветом выходных (30% weekendColor)
+                            baseColor.setRed((baseColor.red() * 0.7 + weekendColor.red() * 0.3));
+                            baseColor.setGreen((baseColor.green() * 0.7 + weekendColor.green() * 0.3));
+                            baseColor.setBlue((baseColor.blue() * 0.7 + weekendColor.blue() * 0.3));
+                        }
+                        item->setBackground(QBrush(baseColor));
                         item->setText(""); // Очищаем текст
+                        item->setForeground(QColor(baseColor.lightness() > 150 ? Qt::black : Qt::white));
                     }
 
                     item->setTextAlignment(Qt::AlignCenter);
 
                     // Устанавливаем подсказку для ячейки
                     QString status = isOccupied ? "Занято" : "Свободно";
-                    QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\nСтатус: %4")
+                    QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\nСтатус: %4\nКатегория: %5")
                         .arg(roomNumber)
                         .arg(bedNumber)
                         .arg(currentDate.toString("dd.MM.yyyy"))
-                        .arg(status);
+                        .arg(status)
+                        .arg(category);
 
                     if (isWeekend) {
                         tooltip += "\nВыходной день";

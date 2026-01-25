@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QDebug>
 #include <QDate>
+#include <QColor>
 
 class Database : public QObject
 {
@@ -25,6 +26,13 @@ public:
     bool addRoom(const QString& roomNumber, const QString& category, int bedsCount);
     bool removeRoom(int roomId);
     QList<QString> getAllRooms();
+
+    // Методы для работы с категориями
+    bool addCategory(const QString& categoryName, const QString& color = "#FFFFFF");
+    bool removeCategory(const QString& categoryName);
+    bool updateCategoryColor(const QString& categoryName, const QString& color);
+    QList<QPair<QString, QString>> getAllCategories();
+    QString getCategoryColor(const QString& categoryName);
 
     // Методы для работы с кроватями
     bool addBed(int roomId, int bedNumber, double pricePerDay);

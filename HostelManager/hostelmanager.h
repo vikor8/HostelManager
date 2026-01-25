@@ -5,6 +5,7 @@
 #include <QDate>
 #include <QInputDialog>
 #include <QMap>
+#include <QColor>
 #include "database.h"
 
 // Forward declarations
@@ -32,6 +33,9 @@ public:
     // Метод для перевода месяца на русский
     QString monthToRussian(const QString& month) const;
 
+    // Метод для получения цвета категории
+    QColor getCategoryColor(const QString& category) const;
+
 private slots:
     void on_btnToday_clicked();
     void on_btnRefresh_clicked();
@@ -44,6 +48,10 @@ private slots:
     void onEditRoom();
     void onDeleteRoom();
 
+    // Слоты для управления категориями
+    void onManageCategories();
+    void loadCategories(); // Загрузка категорий из базы данных
+
 private:
     Ui::HostelManager *ui;
     QDate currentStartDate;
@@ -51,10 +59,10 @@ private:
     static const int DAYS_COUNT = 31;
 
     QMap<QString, int> roomIdMap; // Карта для хранения ID комнат
+    QMap<QString, QColor> categoryColors; // Карта цветов категорий
 
     void createMenuBar();
     void initializeDatabase();
-    void loadDataFromDatabase();
     void updateRoomIdMap(); // Обновление карты ID комнат
 };
 
