@@ -1,8 +1,12 @@
 #include "hostelmanager.h"
 #include "ui_hostelmanager.h"
+
+#include "database.h"
+#include "addclientdialog.h"
+#include "addbookingdialog.h"
+
 #include <QTableWidget>
 #include <QTableWidgetItem>
-#include <QDate>
 #include <QHeaderView>
 #include <QBrush>
 #include <QColor>
@@ -286,7 +290,7 @@ void HostelManager::createMenuBar()
         }
     });
 
-    // Создаем меню "Клиенты" (ОБНОВЛЕНО)
+    // Создаем меню "Клиенты"
     QMenu *clientsMenu = menuBar->addMenu("&Клиенты");
 
     QAction *viewClientsAction = clientsMenu->addAction("&Просмотр клиентов");
@@ -336,6 +340,128 @@ void HostelManager::createMenuBar()
             QMessageBox::warning(this, "Ошибка", "База данных не подключена");
         }
     });
+
+    QMenu *bookingMenu = menuBar->addMenu("&Бронирование");
+
+        QAction *newBookingAction = bookingMenu->addAction("&Новое бронирование");
+        newBookingAction->setShortcut(Qt::Key_F6); // Горячая клавиша F6
+        connect(newBookingAction, &QAction::triggered, this, &HostelManager::onAddBooking);
+
+        QAction *viewBookingsAction = bookingMenu->addAction("&Просмотр бронирований");
+        viewBookingsAction->setShortcut(Qt::CTRL | Qt::Key_B);
+        connect(viewBookingsAction, &QAction::triggered, this, [this](){
+            if (!database->isDatabaseConnected()) {
+                QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+                return;
+            }
+
+            // Показываем список активных бронирований
+            QSqlQuery query(database->getDatabase());
+            query.exec("SELECT "
+                      "b.id as booking_id, "
+                      "r.room_number, "
+                      "bd.bed_number, "
+                      "c.last_name || ' ' || c.first_name as client_name, "
+                      "b.check_in_date, "
+                      "b.check_out_date, "
+                      "b.total_price "
+                      "FROM bookings b "
+                      "JOIN beds bd ON b.bed_id = bd.id "
+                      "JOIN rooms r ON bd.room_id = r.id "
+                      "JOIN clients c ON b.client_id = c.id "
+                      "WHERE b.status = 'active' "
+                      "ORDER BY b.check_in_date");
+
+            if (!query.isActive()) {
+                QMessageBox::warning(this, "Ошибка", "Не удалось загрузить бронирования");
+                return;
+            }
+
+            QString bookingsText = "<html><body><h3>Активные бронирования</h3>";
+            bookingsText += "<table border='1' cellpadding='4' style='border-collapse: collapse;'>";
+            bookingsText += "<tr><th>Комната</th><th>Койка</th><th>Клиент</th><th>Заезд</th><th>Выезд</th><th>Стоимость</th></tr>";
+
+            bool hasBookings = false;
+            while (query.next()) {
+                hasBookings = true;
+                bookingsText += QString("<tr>"
+                    "<td>%1</td>"
+                    "<td align='center'>%2</td>"
+                    "<td>%3</td>"
+                    "<td>%4</td>"
+                    "<td>%5</td>"
+                    "<td align='right'>%6 руб.</td>"
+                    "</tr>")
+                    .arg(query.value(1).toString())
+                    .arg(query.value(2).toString())
+                    .arg(query.value(3).toString())
+                    .arg(QDate::fromString(query.value(4).toString(), "yyyy-MM-dd").toString("dd.MM.yyyy"))
+                    .arg(QDate::fromString(query.value(5).toString(), "yyyy-MM-dd").toString("dd.MM.yyyy"))
+                    .arg(query.value(6).toDouble(), 0, 'f', 2);
+            }
+
+            bookingsText += "</table></body></html>";
+
+            if (!hasBookings) {
+                bookingsText = "<h3>Нет активных бронирований</h3>";
+            }
+
+            QMessageBox::information(this, "Активные бронирования", bookingsText);
+        });
+
+        QAction *cancelBookingAction = bookingMenu->addAction("&Отменить бронирование");
+        connect(cancelBookingAction, &QAction::triggered, this, [this](){
+            // Здесь можно добавить функционал отмены бронирований
+            QMessageBox::information(this, "В разработке", "Функция отмены бронирований находится в разработке");
+        });
+
+        bookingMenu->addSeparator();
+
+        QAction *bookingStatsAction = bookingMenu->addAction("&Статистика бронирований");
+        connect(bookingStatsAction, &QAction::triggered, this, [this](){
+            if (!database->isDatabaseConnected()) {
+                QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+                return;
+            }
+
+            QDate today = QDate::currentDate();
+            QDate startOfMonth = QDate(today.year(), today.month(), 1);
+            QDate endOfMonth = QDate(today.year(), today.month(), today.daysInMonth());
+
+            QSqlQuery query(database->getDatabase());
+            query.prepare("SELECT "
+                         "COUNT(*) as total_bookings, "
+                         "SUM(total_price) as total_revenue, "
+                         "AVG(total_price) as avg_price "
+                         "FROM bookings "
+                         "WHERE status = 'active' "
+                         "AND check_in_date BETWEEN ? AND ?");
+            query.addBindValue(startOfMonth.toString("yyyy-MM-dd"));
+            query.addBindValue(endOfMonth.toString("yyyy-MM-dd"));
+
+            QString stats = "<html><body><h3>Статистика бронирований</h3>";
+            stats += QString("<p>Период: %1 - %2</p>")
+                .arg(startOfMonth.toString("dd.MM.yyyy"))
+                .arg(endOfMonth.toString("dd.MM.yyyy"));
+
+            if (query.exec() && query.next()) {
+                stats += "<table width='100%'>";
+                stats += QString("<tr><td>Всего бронирований:</td><td><b>%1</b></td></tr>")
+                    .arg(query.value(0).toString());
+                stats += QString("<tr><td>Общая выручка:</td><td><b>%1 руб.</b></td></tr>")
+                    .arg(query.value(1).toDouble(), 0, 'f', 2);
+                stats += QString("<tr><td>Средняя стоимость:</td><td><b>%1 руб.</b></td></tr>")
+                    .arg(query.value(2).toDouble(), 0, 'f', 2);
+                stats += "</table>";
+            }
+
+            stats += "</body></html>";
+
+            QMessageBox::information(this, "Статистика бронирований", stats);
+        });
+
+
+
 
     // Создаем меню "О программе"
     QMenu *helpMenu = menuBar->addMenu("&О программе");
@@ -1064,37 +1190,44 @@ void HostelManager::onViewClients()
 // Слот для добавления клиента
 void HostelManager::onAddClient()
 {
-    if (!database->isDatabaseConnected()) {
+    if (!database || !database->isDatabaseConnected()) {
         QMessageBox::warning(this, "Ошибка", "База данных не подключена");
         return;
     }
 
-    AddClientDialog dialog(this, AddClientDialog::Add);
+    // Используем явное объявление переменной
+    AddClientDialog *clientDialog = new AddClientDialog(this, AddClientDialog::Add);
 
-    if (dialog.exec() == QDialog::Accepted) {
+    if (clientDialog->exec() == QDialog::Accepted) {
         // Проверяем, не существует ли уже клиент с таким паспортом
-        if (database->clientExists(dialog.passport())) {
+        if (database->clientExists(clientDialog->passport())) {
             QMessageBox::warning(this, "Ошибка",
                 "Клиент с таким номером паспорта уже существует!");
+            clientDialog->deleteLater();
             return;
         }
 
         // Добавляем клиента в базу данных
-        if (database->addClient(dialog.firstName(), dialog.lastName(),
-                               dialog.middleName(), dialog.passport(),
-                               dialog.phone(), dialog.birthDate(),
-                               dialog.country())) {
+        if (database->addClient(clientDialog->firstName(),
+                               clientDialog->lastName(),
+                               clientDialog->middleName(),
+                               clientDialog->passport(),
+                               clientDialog->phone(),
+                               clientDialog->birthDate(),
+                               clientDialog->country())) {
             QMessageBox::information(this, "Успех", "Клиент успешно добавлен!");
         } else {
             QMessageBox::warning(this, "Ошибка", "Не удалось добавить клиента");
         }
     }
+
+    clientDialog->deleteLater();
 }
 
-// Слот для редактирования клиента
+// Слот для редактирования клиента (исправленная версия)
 void HostelManager::onEditClient()
 {
-    if (!database->isDatabaseConnected()) {
+    if (!database || !database->isDatabaseConnected()) {
         QMessageBox::warning(this, "Ошибка", "База данных не подключена");
         return;
     }
@@ -1139,11 +1272,11 @@ void HostelManager::onEditClient()
         return;
     }
 
-    // Создаем диалог редактирования
-    AddClientDialog dialog(this, AddClientDialog::Edit, clientId);
+    // Используем явное объявление переменной
+    AddClientDialog *clientDialog = new AddClientDialog(this, AddClientDialog::Edit, clientId);
 
     // Заполняем поля данными клиента
-    dialog.setClientData(
+    clientDialog->setClientData(
         clientData["first_name"].toString(),
         clientData["last_name"].toString(),
         clientData["middle_name"].toString(),
@@ -1153,29 +1286,36 @@ void HostelManager::onEditClient()
         clientData["country"].toString()
     );
 
-    if (dialog.exec() == QDialog::Accepted) {
+    if (clientDialog->exec() == QDialog::Accepted) {
         // Проверяем, не изменился ли паспорт на уже существующий
-        QString newPassport = dialog.passport();
+        QString newPassport = clientDialog->passport();
         QString oldPassport = clientData["passport_number"].toString();
 
         if (newPassport != oldPassport && database->clientExists(newPassport)) {
             QMessageBox::warning(this, "Ошибка",
                 "Клиент с таким номером паспорта уже существует!");
+            clientDialog->deleteLater();
             return;
         }
 
         // Обновляем данные клиента
         if (database->updateClient(clientId,
-                                  dialog.firstName(), dialog.lastName(),
-                                  dialog.middleName(), dialog.passport(),
-                                  dialog.phone(), dialog.birthDate(),
-                                  dialog.country())) {
+                                  clientDialog->firstName(),
+                                  clientDialog->lastName(),
+                                  clientDialog->middleName(),
+                                  clientDialog->passport(),
+                                  clientDialog->phone(),
+                                  clientDialog->birthDate(),
+                                  clientDialog->country())) {
             QMessageBox::information(this, "Успех", "Данные клиента обновлены!");
         } else {
             QMessageBox::warning(this, "Ошибка", "Не удалось обновить данные клиента");
         }
     }
+
+    clientDialog->deleteLater();
 }
+
 
 // Слот для удаления клиента
 void HostelManager::onDeleteClient()
@@ -1635,4 +1775,38 @@ void HostelManager::updateTableColors()
     } catch (...) {
         qDebug() << "Неизвестная ошибка при обновлении цветов";
     }
+}
+// Слот для добавления нового бронирования
+void HostelManager::onAddBooking()
+{
+    if (!database || !database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Используем явное объявление переменной
+    AddBookingDialog *bookingDialog = new AddBookingDialog(database, this);
+
+    if (bookingDialog->exec() == QDialog::Accepted) {
+        // Создаем бронирование
+        if (database->addBooking(bookingDialog->bedId(),
+                                bookingDialog->clientId(),
+                                bookingDialog->checkInDate(),
+                                bookingDialog->checkOutDate(),
+                                bookingDialog->totalPrice())) {
+            QMessageBox::information(this, "Успех",
+                QString("Бронирование успешно создано!\n"
+                       "Общая стоимость: %1 руб.")
+                    .arg(bookingDialog->totalPrice(), 0, 'f', 2));
+
+            // Обновляем таблицу
+            updateTableColors();
+        } else {
+            QMessageBox::warning(this, "Ошибка",
+                "Не удалось создать бронирование.\n"
+                "Возможно, койка уже забронирована на эти даты.");
+        }
+    }
+
+    bookingDialog->deleteLater();
 }

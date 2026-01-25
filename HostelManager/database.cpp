@@ -345,9 +345,15 @@ bool Database::addBooking(int bedId, int clientId, const QDate& checkInDate,
     query.addBindValue(checkOutDate.toString("yyyy-MM-dd"));
     query.addBindValue(totalPrice);
 
-    return query.exec();
-}
+    if (query.exec()) {
+           return true;
+       } else {
+           qDebug() << "Ошибка добавления бронирования:" << query.lastError().text();
+           return false;
+       }
+   }
 
+// Метод для проверки доступности койки
 bool Database::isBedAvailable(int bedId, const QDate& checkInDate, const QDate& checkOutDate)
 {
     QSqlQuery query;
@@ -365,7 +371,6 @@ bool Database::isBedAvailable(int bedId, const QDate& checkInDate, const QDate& 
 
     return false;
 }
-
 QList<QString> Database::getAllRooms()
 {
     QList<QString> rooms;

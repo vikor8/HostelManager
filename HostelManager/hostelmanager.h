@@ -6,10 +6,13 @@
 #include <QInputDialog>
 #include <QMap>
 #include <QColor>
-#include "database.h"
-#include "addclientdialog.h"
 
-// Forward declarations
+// Forward declarations вместо include
+class Database;
+class AddClientDialog;
+class AddBookingDialog;
+
+// Forward declarations для QTableWidget
 class QTableWidget;
 
 QT_BEGIN_NAMESPACE
@@ -53,11 +56,14 @@ private slots:
     void onManageCategories();
     void loadCategories(); // Загрузка категорий из базы данных
 
-    // Слоты для управления клиентами (НОВЫЕ)
+    // Слоты для управления клиентами
     void onViewClients();
     void onAddClient();
     void onEditClient();
     void onDeleteClient();
+
+    // Слоты для бронирования
+    void onAddBooking();
 
 private:
     Ui::HostelManager *ui;
