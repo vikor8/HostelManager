@@ -340,40 +340,93 @@ void HostelManager::onAddRoom()
             return;
         }
 
-        // Добавляем комнату
-        QSqlQuery query(database->getDatabase());
-        query.prepare("INSERT INTO rooms (room_number, category, beds_count) VALUES (?, ?, ?)");
-        query.addBindValue(roomNumber);
-        query.addBindValue(category);
-        query.addBindValue(bedsCount);
+        // Временное отключение триггера
+        QSqlQuery disableTriggerQuery(database->getDatabase());
+        disableTriggerQuery.exec("DROP TRIGGER IF EXISTS create_beds_after_room_insert");
 
-        if (!query.exec()) {
-            QMessageBox::warning(this, "Ошибка", "Не удалось добавить комнату: " + query.lastError().text());
-            return;
-        }
+        try {
+            // Добавляем комнату
+            QSqlQuery query(database->getDatabase());
+            query.prepare("INSERT INTO rooms (room_number, category, beds_count) VALUES (?, ?, ?)");
+            query.addBindValue(roomNumber);
+            query.addBindValue(category);
+            query.addBindValue(bedsCount);
 
-        int roomId = query.lastInsertId().toInt();
-
-        // Добавляем койки с указанной ценой
-        for (int i = 1; i <= bedsCount; ++i) {
-            QSqlQuery bedQuery(database->getDatabase());
-            bedQuery.prepare("INSERT INTO beds (room_id, bed_number, price_per_day) VALUES (?, ?, ?)");
-            bedQuery.addBindValue(roomId);
-            bedQuery.addBindValue(i);
-            bedQuery.addBindValue(pricePerDay);
-
-            if (!bedQuery.exec()) {
-                QMessageBox::warning(this, "Ошибка",
-                    QString("Не удалось добавить койку %1: %2").arg(i).arg(bedQuery.lastError().text()));
+            if (!query.exec()) {
+                QMessageBox::warning(this, "Ошибка", "Не удалось добавить комнату: " + query.lastError().text());
+                // Восстанавливаем триггер
+                QSqlQuery restoreTriggerQuery(database->getDatabase());
+                restoreTriggerQuery.exec(
+                    "CREATE TRIGGER create_beds_after_room_insert "
+                    "AFTER INSERT ON rooms "
+                    "BEGIN "
+                    "   INSERT INTO beds (room_id, bed_number, price_per_day) "
+                    "   SELECT NEW.id, 1, 500.00 "
+                    "   UNION ALL SELECT NEW.id, 2, 500.00 "
+                    "   UNION ALL SELECT NEW.id, 3, 500.00 "
+                    "   UNION ALL SELECT NEW.id, 4, 500.00; "
+                    "END"
+                );
+                return;
             }
+
+            int roomId = query.lastInsertId().toInt();
+
+            // Добавляем койки с указанной ценой
+            for (int i = 1; i <= bedsCount; ++i) {
+                QSqlQuery bedQuery(database->getDatabase());
+                bedQuery.prepare("INSERT INTO beds (room_id, bed_number, price_per_day) VALUES (?, ?, ?)");
+                bedQuery.addBindValue(roomId);
+                bedQuery.addBindValue(i);
+                bedQuery.addBindValue(pricePerDay);
+
+                if (!bedQuery.exec()) {
+                    // Если ошибка, но не из-за дубликата
+                    if (!bedQuery.lastError().text().contains("UNIQUE constraint")) {
+                        QMessageBox::warning(this, "Ошибка",
+                            QString("Не удалось добавить койку %1: %2").arg(i).arg(bedQuery.lastError().text()));
+                    }
+                }
+            }
+
+            // Восстанавливаем триггер
+            QSqlQuery restoreTriggerQuery(database->getDatabase());
+            restoreTriggerQuery.exec(
+                "CREATE TRIGGER IF NOT EXISTS create_beds_after_room_insert "
+                "AFTER INSERT ON rooms "
+                "BEGIN "
+                "   -- Триггер будет создавать только если комнат меньше 4 коек "
+                "   INSERT INTO beds (room_id, bed_number, price_per_day) "
+                "   SELECT NEW.id, 1, 500.00 WHERE NEW.beds_count >= 1 "
+                "   UNION ALL SELECT NEW.id, 2, 500.00 WHERE NEW.beds_count >= 2 "
+                "   UNION ALL SELECT NEW.id, 3, 500.00 WHERE NEW.beds_count >= 3 "
+                "   UNION ALL SELECT NEW.id, 4, 500.00 WHERE NEW.beds_count >= 4; "
+                "END"
+            );
+
+            QMessageBox::information(this, "Успех",
+                QString("Комната %1 успешно добавлена!\nКатегория: %2\nКоличество коек: %3\nЦена за день: %4 руб.")
+                    .arg(roomNumber).arg(category).arg(bedsCount).arg(pricePerDay, 0, 'f', 2));
+
+            updateRoomIdMap();
+            initializeTable();
+
+        } catch (const std::exception& e) {
+            // Восстанавливаем триггер в случае ошибки
+            QSqlQuery restoreTriggerQuery(database->getDatabase());
+            restoreTriggerQuery.exec(
+                "CREATE TRIGGER IF NOT EXISTS create_beds_after_room_insert "
+                "AFTER INSERT ON rooms "
+                "BEGIN "
+                "   INSERT INTO beds (room_id, bed_number, price_per_day) "
+                "   SELECT NEW.id, 1, 500.00 "
+                "   UNION ALL SELECT NEW.id, 2, 500.00 "
+                "   UNION ALL SELECT NEW.id, 3, 500.00 "
+                "   UNION ALL SELECT NEW.id, 4, 500.00; "
+                "END"
+            );
+            QMessageBox::warning(this, "Ошибка", QString("Ошибка при добавлении комнаты: %1").arg(e.what()));
         }
-
-        QMessageBox::information(this, "Успех",
-            QString("Комната %1 успешно добавлена!\nКатегория: %2\nКоличество коек: %3\nЦена за день: %4 руб.")
-                .arg(roomNumber).arg(category).arg(bedsCount).arg(pricePerDay, 0, 'f', 2));
-
-        updateRoomIdMap();
-        initializeTable();
     }
 }
 
