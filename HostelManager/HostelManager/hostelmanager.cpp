@@ -1589,7 +1589,7 @@ void HostelManager::updateTableColors()
 
         // Цвета для статусов
         QColor fullyPaidColor(144, 238, 144);    // Светло-зеленый - полностью оплачено
-        QColor partiallyPaidColor(255, 255, 153); // Светло-желтый - частично оплачено
+        QColor partiallyPaidColor(200, 200, 0); // Светло-желтый - частично оплачено
         QColor notPaidColor(255, 200, 150);       // Светло-оранжевый - не оплачено
         QColor weekendColor(220, 220, 255);       // Светло-синий для выходных
 
@@ -1875,50 +1875,6 @@ void HostelManager::updateTableColors()
 
         // Обновляем название группы
         ui->groupBox_2->setTitle(QString("Расписание занятости номеров (%1 дней)").arg(DAYS_COUNT));
-
-        // Обновляем легенду
-        ui->frameOccupied->setStyleSheet("background-color: rgb(255, 200, 150);"); // Оранжевый - не оплачено
-        ui->label_4->setText("Занято (не оплачено)");
-
-        // Удаляем старые элементы легенды если они уже существуют
-        QFrame* existingFullyPaid = findChild<QFrame*>("frameFullyPaid");
-        QFrame* existingPartiallyPaid = findChild<QFrame*>("framePartiallyPaid");
-
-        if (existingFullyPaid) delete existingFullyPaid;
-        if (existingPartiallyPaid) delete existingPartiallyPaid;
-
-        // Добавляем новую легенду для полностью оплаченных
-        QFrame* frameFullyPaid = new QFrame(this);
-        frameFullyPaid->setObjectName("frameFullyPaid");
-        frameFullyPaid->setStyleSheet("background-color: rgb(144, 238, 144);");
-        frameFullyPaid->setFrameShape(QFrame::Box);
-        frameFullyPaid->setFrameShadow(QFrame::Raised);
-        frameFullyPaid->setLineWidth(1);
-        frameFullyPaid->setFixedHeight(20);
-
-        QHBoxLayout* layoutFullyPaid = new QHBoxLayout(frameFullyPaid);
-        layoutFullyPaid->setContentsMargins(5, 0, 5, 0);
-        QLabel* labelFullyPaid = new QLabel("Оплачено полностью", frameFullyPaid);
-        layoutFullyPaid->addWidget(labelFullyPaid);
-
-        // Добавляем в горизонтальный layout после существующей легенды
-        ui->horizontalLayout_2->insertWidget(2, frameFullyPaid);
-
-        // Добавляем легенду для частично оплаченных
-        QFrame* framePartiallyPaid = new QFrame(this);
-        framePartiallyPaid->setObjectName("framePartiallyPaid");
-        framePartiallyPaid->setStyleSheet("background-color: rgb(255, 255, 153);");
-        framePartiallyPaid->setFrameShape(QFrame::Box);
-        framePartiallyPaid->setFrameShadow(QFrame::Raised);
-        framePartiallyPaid->setLineWidth(1);
-        framePartiallyPaid->setFixedHeight(20);
-
-        QHBoxLayout* layoutPartiallyPaid = new QHBoxLayout(framePartiallyPaid);
-        layoutPartiallyPaid->setContentsMargins(5, 0, 5, 0);
-        QLabel* labelPartiallyPaid = new QLabel("Частично оплачено", framePartiallyPaid);
-        layoutPartiallyPaid->addWidget(labelPartiallyPaid);
-
-        ui->horizontalLayout_2->insertWidget(3, framePartiallyPaid);
 
         qDebug() << "Цвета таблицы обновлены успешно";
 

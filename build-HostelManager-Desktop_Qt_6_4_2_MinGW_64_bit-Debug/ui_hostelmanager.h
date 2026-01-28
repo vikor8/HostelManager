@@ -46,6 +46,12 @@ public:
     QFrame *frameOccupied;
     QHBoxLayout *horizontalLayout_4;
     QLabel *label_4;
+    QFrame *frameOccupied_2;
+    QHBoxLayout *horizontalLayout_3;
+    QLabel *label_3;
+    QFrame *horizontalFrame;
+    QHBoxLayout *horizontalLayout_5;
+    QLabel *label_5;
     QSpacerItem *horizontalSpacer_2;
     QPushButton *btnRefresh;
 
@@ -131,6 +137,41 @@ public:
 
         horizontalLayout_2->addWidget(frameOccupied);
 
+        frameOccupied_2 = new QFrame(groupBox_2);
+        frameOccupied_2->setObjectName("frameOccupied_2");
+        frameOccupied_2->setStyleSheet(QString::fromUtf8("background-color: rgb(144, 238, 144);"));
+        frameOccupied_2->setFrameShape(QFrame::Box);
+        frameOccupied_2->setFrameShadow(QFrame::Raised);
+        horizontalLayout_3 = new QHBoxLayout(frameOccupied_2);
+        horizontalLayout_3->setObjectName("horizontalLayout_3");
+        horizontalLayout_3->setContentsMargins(9, 9, 9, 9);
+        label_3 = new QLabel(frameOccupied_2);
+        label_3->setObjectName("label_3");
+
+        horizontalLayout_3->addWidget(label_3);
+
+
+        horizontalLayout_2->addWidget(frameOccupied_2);
+
+        horizontalFrame = new QFrame(groupBox_2);
+        horizontalFrame->setObjectName("horizontalFrame");
+        horizontalFrame->setStyleSheet(QString::fromUtf8("background-color: rgb(255, 200, 150);"));
+        horizontalFrame->setFrameShape(QFrame::Box);
+        horizontalFrame->setFrameShadow(QFrame::Raised);
+        horizontalLayout_5 = new QHBoxLayout(horizontalFrame);
+        horizontalLayout_5->setSpacing(6);
+        horizontalLayout_5->setObjectName("horizontalLayout_5");
+        horizontalLayout_5->setContentsMargins(9, 9, 9, 9);
+        label_5 = new QLabel(horizontalFrame);
+        label_5->setObjectName("label_5");
+        label_5->setFrameShape(QFrame::NoFrame);
+        label_5->setFrameShadow(QFrame::Raised);
+
+        horizontalLayout_5->addWidget(label_5);
+
+
+        horizontalLayout_2->addWidget(horizontalFrame);
+
         horizontalSpacer_2 = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
 
         horizontalLayout_2->addItem(horizontalSpacer_2);
@@ -162,7 +203,9 @@ public:
         lblStatus->setText(QCoreApplication::translate("HostelManager", "\320\221\320\260\320\267\320\260 \320\264\320\260\320\275\320\275\321\213\321\205: \320\277\320\276\320\264\320\272\320\273\321\216\321\207\320\265\320\275\320\260", nullptr));
         groupBox_2->setTitle(QCoreApplication::translate("HostelManager", "\320\240\320\260\321\201\320\277\320\270\321\201\320\260\320\275\320\270\320\265 \320\267\320\260\320\275\321\217\321\202\320\276\321\201\321\202\320\270 \320\275\320\276\320\274\320\265\321\200\320\276\320\262 (30 \320\264\320\275\320\265\320\271)", nullptr));
         label_2->setText(QCoreApplication::translate("HostelManager", "\320\233\320\265\320\263\320\265\320\275\320\264\320\260:", nullptr));
-        label_4->setText(QCoreApplication::translate("HostelManager", "\320\227\320\260\320\275\321\217\321\202", nullptr));
+        label_4->setText(QCoreApplication::translate("HostelManager", "\321\207\320\260\321\201\321\202\320\270\321\207\320\275\320\276 \320\276\320\277\320\273\320\260\321\207\320\265\320\275\320\276", nullptr));
+        label_3->setText(QCoreApplication::translate("HostelManager", "\320\277\320\276\320\273\320\275\320\276\321\201\321\202\321\214\321\216 \320\276\320\277\320\273\320\260\321\207\320\265", nullptr));
+        label_5->setText(QCoreApplication::translate("HostelManager", "\320\275\320\265 \320\276\320\277\320\273\320\260\321\207\320\265\320\275\320\276", nullptr));
         btnRefresh->setText(QCoreApplication::translate("HostelManager", "\320\236\320\261\320\275\320\276\320\262\320\270\321\202\321\214", nullptr));
     } // retranslateUi
 
