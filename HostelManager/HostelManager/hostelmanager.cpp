@@ -1588,15 +1588,19 @@ void HostelManager::updateTableColors()
         }
 
         // Цвета для статусов
-        QColor occupiedColor(200, 200, 0);    // Желтый для занятых
-        QColor weekendColor(220, 220, 255);   // Светло-синий для выходных
+        QColor fullyPaidColor(144, 238, 144);    // Светло-зеленый - полностью оплачено
+        QColor partiallyPaidColor(255, 255, 153); // Светло-желтый - частично оплачено
+        QColor notPaidColor(255, 200, 150);       // Светло-оранжевый - не оплачено
+        QColor weekendColor(220, 220, 255);       // Светло-синий для выходных
 
         // Получаем данные о бронированиях из базы данных
         QMap<QString, QSet<QDate>> occupiedDates; // Ключ: "комната_койка", значение: набор занятых дат
+        QMap<QString, QMap<QDate, QVariantMap>> paymentInfo; // Ключ: "комната_койка", значение: map<дата, информация_об_оплате>
 
         if (database->isDatabaseConnected()) {
             QSqlQuery query(database->getDatabase());
-            query.prepare("SELECT r.room_number, b.bed_number, bk.check_in_date, bk.check_out_date "
+            query.prepare("SELECT r.room_number, b.bed_number, bk.check_in_date, bk.check_out_date, "
+                         "bk.total_price, bk.paid_amount "
                          "FROM bookings bk "
                          "JOIN beds b ON bk.bed_id = b.id "
                          "JOIN rooms r ON b.room_id = r.id "
@@ -1609,9 +1613,11 @@ void HostelManager::updateTableColors()
             if (query.exec()) {
                 while (query.next()) {
                     QString roomNumber = query.value(0).toString();
-                    int bedNumber = query.value(1).toInt();
+                    int bedNumber = query.value(1).toInt(); // Получаем int
                     QDate checkIn = QDate::fromString(query.value(2).toString(), "yyyy-MM-dd");
                     QDate checkOut = QDate::fromString(query.value(3).toString(), "yyyy-MM-dd");
+                    double totalPrice = query.value(4).toDouble();
+                    double paidAmount = query.value(5).toDouble();
 
                     QString key = roomNumber + "_" + QString::number(bedNumber);
 
@@ -1620,6 +1626,20 @@ void HostelManager::updateTableColors()
                     while (date <= checkOut && date <= currentStartDate.addDays(DAYS_COUNT - 1)) {
                         if (date >= currentStartDate) {
                             occupiedDates[key].insert(date);
+
+                            // Сохраняем информацию об оплате для каждой даты
+                            QVariantMap payment;
+                            payment["total_price"] = totalPrice;
+                            payment["paid_amount"] = paidAmount;
+                            if (totalPrice > 0) {
+                                double percentage = (paidAmount / totalPrice) * 100;
+                                payment["paid_percentage"] = qRound(percentage);
+                            } else {
+                                payment["paid_percentage"] = 0;
+                            }
+                            payment["balance"] = totalPrice - paidAmount;
+
+                            paymentInfo[key][date] = payment;
                         }
                         date = date.addDays(1);
                     }
@@ -1646,8 +1666,9 @@ void HostelManager::updateTableColors()
             }
 
             QString roomNumber = roomItem->text();
-            QString bedNumber = bedItem->text();
-            QString key = roomNumber + "_" + bedNumber;
+            QString bedNumberStr = bedItem->text();
+            int bedNumber = bedNumberStr.toInt(); // Конвертируем в int
+            QString key = roomNumber + "_" + bedNumberStr;
 
             // Получаем категорию комнаты
             QTableWidgetItem *categoryItem = ui->tableWidget->item(row, 2);
@@ -1691,9 +1712,50 @@ void HostelManager::updateTableColors()
 
                     // Устанавливаем цвет в зависимости от статуса
                     if (isOccupied) {
-                        item->setBackground(QBrush(occupiedColor));
-                        item->setText("●"); // Маркер занятости
-                        item->setForeground(QColor(Qt::black));
+                        // Получаем информацию об оплате
+                        QVariantMap payment;
+                        if (paymentInfo.contains(key) && paymentInfo[key].contains(currentDate)) {
+                            payment = paymentInfo[key][currentDate];
+                        } else {
+                            // Если нет информации в кэше, получаем из базы данных
+                            payment = database->getBookingInfo(roomNumber, bedNumber, currentDate);
+                        }
+
+//                        double totalPrice = payment["total_price"].toDouble();
+                        double paidAmount = payment["paid_amount"].toDouble();
+                        double balance = payment["balance"].toDouble();
+                        int paidPercentage = payment["paid_percentage"].toInt();
+
+                        QColor cellColor;
+                        QString statusText;
+
+                        if (balance <= 0) {
+                            // Полностью оплачено
+                            cellColor = fullyPaidColor;
+                            statusText = "✓"; // Галочка для полностью оплаченных
+                            item->setForeground(QColor(Qt::darkGreen));
+                        } else if (paidAmount > 0) {
+                            // Частично оплачено
+                            cellColor = partiallyPaidColor;
+                            statusText = QString("%1%").arg(paidPercentage);
+                            item->setForeground(QColor(Qt::darkYellow));
+                        } else {
+                            // Не оплачено
+                            cellColor = notPaidColor;
+                            statusText = "●"; // Точка для неоплаченных
+                            item->setForeground(QColor(Qt::darkRed));
+                        }
+
+                        // Если выходной, смешиваем с цветом выходных
+                        if (isWeekend) {
+                            cellColor.setRed((cellColor.red() * 0.7 + weekendColor.red() * 0.3));
+                            cellColor.setGreen((cellColor.green() * 0.7 + weekendColor.green() * 0.3));
+                            cellColor.setBlue((cellColor.blue() * 0.7 + weekendColor.blue() * 0.3));
+                        }
+
+                        item->setBackground(QBrush(cellColor));
+                        item->setText(statusText);
+
                     } else {
                         // Для свободных: используем цвет категории, для выходных - смешиваем с weekendColor
                         QColor baseColor = categoryColor.lighter(120);
@@ -1711,18 +1773,59 @@ void HostelManager::updateTableColors()
                     item->setTextAlignment(Qt::AlignCenter);
 
                     // Устанавливаем подсказку для ячейки
-                    QString status = isOccupied ? "Занято" : "Свободно";
-                    QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\nСтатус: %4\nКатегория: %5")
+                    QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\n")
                         .arg(roomNumber)
                         .arg(bedNumber)
-                        .arg(currentDate.toString("dd.MM.yyyy"))
-                        .arg(status)
-                        .arg(category);
+                        .arg(currentDate.toString("dd.MM.yyyy"));
+
+                    if (isOccupied) {
+                        // Получаем информацию об оплате для подсказки
+                        QVariantMap payment;
+                        if (paymentInfo.contains(key) && paymentInfo[key].contains(currentDate)) {
+                            payment = paymentInfo[key][currentDate];
+                        } else {
+                            payment = database->getBookingInfo(roomNumber, bedNumber, currentDate);
+                        }
+
+                        if (!payment.isEmpty()) {
+                            double totalPrice = payment["total_price"].toDouble();
+                            double paidAmount = payment["paid_amount"].toDouble();
+                            double balance = payment["balance"].toDouble();
+                            int paidPercentage = payment["paid_percentage"].toInt();
+                            QString clientName = payment["client_name"].toString();
+
+                            if (!clientName.isEmpty()) {
+                                tooltip += QString("Клиент: %1\n").arg(clientName);
+                            }
+
+                            tooltip += QString("Общая стоимость: %1 руб.\n"
+                                             "Оплачено: %2 руб.\n"
+                                             "Остаток: %3 руб.\n"
+                                             "Оплачено: %4%")
+                                .arg(totalPrice, 0, 'f', 2)
+                                .arg(paidAmount, 0, 'f', 2)
+                                .arg(balance, 0, 'f', 2)
+                                .arg(paidPercentage);
+
+                            if (balance <= 0) {
+                                tooltip += "\nСтатус: Полностью оплачено";
+                            } else if (paidAmount > 0) {
+                                tooltip += "\nСтатус: Частично оплачено";
+                            } else {
+                                tooltip += "\nСтатус: Не оплачено";
+                            }
+                        } else {
+                            tooltip += "Статус: Занято (информация об оплате недоступна)";
+                        }
+                    } else {
+                        tooltip += "Статус: Свободно";
+                    }
 
                     if (isWeekend) {
                         tooltip += "\nВыходной день";
                     }
 
+                    // Получаем информацию о бронировании для занятых ячеек
                     if (isOccupied && database->isDatabaseConnected()) {
                         // Получаем информацию о бронировании
                         QSqlQuery query(database->getDatabase());
@@ -1744,10 +1847,15 @@ void HostelManager::updateTableColors()
                             QDate checkIn = QDate::fromString(query.value(1).toString(), "yyyy-MM-dd");
                             QDate checkOut = QDate::fromString(query.value(2).toString(), "yyyy-MM-dd");
 
-                            tooltip += QString("\nКлиент: %1\nПериод: %2 - %3")
-                                .arg(clientName)
-                                .arg(checkIn.toString("dd.MM.yyyy"))
-                                .arg(checkOut.toString("dd.MM.yyyy"));
+                            if (!clientName.isEmpty() && !tooltip.contains("Клиент:")) {
+                                tooltip += QString("\nКлиент: %1").arg(clientName);
+                            }
+
+                            if (!tooltip.contains("Период:")) {
+                                tooltip += QString("\nПериод: %1 - %2")
+                                    .arg(checkIn.toString("dd.MM.yyyy"))
+                                    .arg(checkOut.toString("dd.MM.yyyy"));
+                            }
                         }
                     }
 
@@ -1768,6 +1876,50 @@ void HostelManager::updateTableColors()
         // Обновляем название группы
         ui->groupBox_2->setTitle(QString("Расписание занятости номеров (%1 дней)").arg(DAYS_COUNT));
 
+        // Обновляем легенду
+        ui->frameOccupied->setStyleSheet("background-color: rgb(255, 200, 150);"); // Оранжевый - не оплачено
+        ui->label_4->setText("Занято (не оплачено)");
+
+        // Удаляем старые элементы легенды если они уже существуют
+        QFrame* existingFullyPaid = findChild<QFrame*>("frameFullyPaid");
+        QFrame* existingPartiallyPaid = findChild<QFrame*>("framePartiallyPaid");
+
+        if (existingFullyPaid) delete existingFullyPaid;
+        if (existingPartiallyPaid) delete existingPartiallyPaid;
+
+        // Добавляем новую легенду для полностью оплаченных
+        QFrame* frameFullyPaid = new QFrame(this);
+        frameFullyPaid->setObjectName("frameFullyPaid");
+        frameFullyPaid->setStyleSheet("background-color: rgb(144, 238, 144);");
+        frameFullyPaid->setFrameShape(QFrame::Box);
+        frameFullyPaid->setFrameShadow(QFrame::Raised);
+        frameFullyPaid->setLineWidth(1);
+        frameFullyPaid->setFixedHeight(20);
+
+        QHBoxLayout* layoutFullyPaid = new QHBoxLayout(frameFullyPaid);
+        layoutFullyPaid->setContentsMargins(5, 0, 5, 0);
+        QLabel* labelFullyPaid = new QLabel("Оплачено полностью", frameFullyPaid);
+        layoutFullyPaid->addWidget(labelFullyPaid);
+
+        // Добавляем в горизонтальный layout после существующей легенды
+        ui->horizontalLayout_2->insertWidget(2, frameFullyPaid);
+
+        // Добавляем легенду для частично оплаченных
+        QFrame* framePartiallyPaid = new QFrame(this);
+        framePartiallyPaid->setObjectName("framePartiallyPaid");
+        framePartiallyPaid->setStyleSheet("background-color: rgb(255, 255, 153);");
+        framePartiallyPaid->setFrameShape(QFrame::Box);
+        framePartiallyPaid->setFrameShadow(QFrame::Raised);
+        framePartiallyPaid->setLineWidth(1);
+        framePartiallyPaid->setFixedHeight(20);
+
+        QHBoxLayout* layoutPartiallyPaid = new QHBoxLayout(framePartiallyPaid);
+        layoutPartiallyPaid->setContentsMargins(5, 0, 5, 0);
+        QLabel* labelPartiallyPaid = new QLabel("Частично оплачено", framePartiallyPaid);
+        layoutPartiallyPaid->addWidget(labelPartiallyPaid);
+
+        ui->horizontalLayout_2->insertWidget(3, framePartiallyPaid);
+
         qDebug() << "Цвета таблицы обновлены успешно";
 
     } catch (const std::exception& e) {
@@ -1776,6 +1928,7 @@ void HostelManager::updateTableColors()
         qDebug() << "Неизвестная ошибка при обновлении цветов";
     }
 }
+
 // Слот для добавления нового бронирования
 void HostelManager::onAddBooking()
 {

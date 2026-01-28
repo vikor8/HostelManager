@@ -96,24 +96,20 @@ void Database::createTables()
                ")");
 
     // Таблица бронирований
-    query.exec("CREATE VIEW IF NOT EXISTS current_bookings AS "
-               "SELECT "
-               "   b.id as booking_id, "
-               "   r.room_number, "
-               "   bd.bed_number, "
-               "   c.first_name || ' ' || c.last_name as client_name, "
-               "   bk.check_in_date, "
-               "   bk.check_out_date, "
-               "   bk.total_price, "
-               "   bk.paid_amount, " // Добавляем оплаченную сумму
-               "   bk.payment_method, " // Добавляем способ оплаты
-               "   bk.status "
-               "FROM bookings bk "
-               "JOIN beds bd ON bk.bed_id = bd.id "
-               "JOIN rooms r ON bd.room_id = r.id "
-               "JOIN clients c ON bk.client_id = c.id "
-               "WHERE bk.status = 'active' "
-               "ORDER BY bk.check_in_date");
+    query.exec("CREATE TABLE IF NOT EXISTS bookings ("
+               "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+               "bed_id INTEGER NOT NULL,"
+               "client_id INTEGER NOT NULL,"
+               "check_in_date DATE NOT NULL,"
+               "check_out_date DATE NOT NULL,"
+               "total_price REAL NOT NULL,"
+               "paid_amount REAL DEFAULT 0,"
+               "payment_method TEXT DEFAULT 'Наличные',"
+               "status TEXT DEFAULT 'active',"
+               "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+               "FOREIGN KEY (bed_id) REFERENCES beds(id),"
+               "FOREIGN KEY (client_id) REFERENCES clients(id)"
+               ")");
 
     // Таблица дополнительных услуг
     query.exec("CREATE TABLE IF NOT EXISTS services ("
@@ -169,17 +165,17 @@ void Database::createTriggers()
                "END");
 
     // Триггер для проверки пересечений дат бронирований
-    query.exec("CREATE TRIGGER IF NOT EXISTS check_booking_overlap "
-               "BEFORE INSERT ON bookings "
-               "BEGIN "
-               "   SELECT RAISE(ABORT, 'Кровать уже забронирована на эти даты') "
-               "   WHERE EXISTS ("
-               "       SELECT 1 FROM bookings "
-               "       WHERE bed_id = NEW.bed_id "
-               "       AND status = 'active' "
-               "       AND NOT (NEW.check_out_date <= check_in_date OR NEW.check_in_date >= check_out_date)"
-               "   ); "
-               "END");
+//    query.exec("CREATE TRIGGER IF NOT EXISTS check_booking_overlap "
+//               "BEFORE INSERT ON bookings "
+//               "BEGIN "
+//               "   SELECT RAISE(ABORT, 'Кровать уже забронирована на эти даты') "
+//               "   WHERE EXISTS ("
+//               "       SELECT 1 FROM bookings "
+//               "       WHERE bed_id = NEW.bed_id "
+//               "       AND status = 'active' "
+//               "       AND NOT (NEW.check_out_date <= check_in_date OR NEW.check_in_date >= check_out_date)"
+//               "   ); "
+//               "END");
 }
 
 void Database::createViews()
@@ -342,9 +338,18 @@ bool Database::addBooking(int bedId, int clientId, const QDate& checkInDate,
                          const QDate& checkOutDate, double totalPrice,
                          double paidAmount, const QString& paymentMethod)
 {
+    // Проверяем доступность койки перед добавлением
+    if (!isBedAvailable(bedId, checkInDate, checkOutDate)) {
+        qDebug() << "Кровать" << bedId << "занята на период"
+                 << checkInDate.toString("dd.MM.yyyy") << "-"
+                 << checkOutDate.toString("dd.MM.yyyy");
+        return false;
+    }
+
     QSqlQuery query;
-    query.prepare("INSERT INTO bookings (bed_id, client_id, check_in_date, check_out_date, total_price, paid_amount, payment_method) "
-                 "VALUES (?, ?, ?, ?, ?, ?, ?)");
+    query.prepare("INSERT INTO bookings (bed_id, client_id, check_in_date, check_out_date, "
+                 "total_price, paid_amount, payment_method, status) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'active')");
     query.addBindValue(bedId);
     query.addBindValue(clientId);
     query.addBindValue(checkInDate.toString("yyyy-MM-dd"));
@@ -354,6 +359,9 @@ bool Database::addBooking(int bedId, int clientId, const QDate& checkInDate,
     query.addBindValue(paymentMethod);
 
     if (query.exec()) {
+        qDebug() << "Бронирование успешно создано для койки" << bedId
+                 << "с" << checkInDate.toString("dd.MM.yyyy")
+                 << "по" << checkOutDate.toString("dd.MM.yyyy");
         return true;
     } else {
         qDebug() << "Ошибка добавления бронирования:" << query.lastError().text();
@@ -368,29 +376,27 @@ bool Database::isBedAvailable(int bedId, const QDate& checkInDate, const QDate& 
     query.prepare("SELECT COUNT(*) FROM bookings "
                  "WHERE bed_id = ? "
                  "AND status = 'active' "
-                 "AND NOT (? <= check_in_date OR ? >= check_out_date)");
+                 "AND check_in_date < ? "  // Проверка что check_in_date < checkOutDate (заезд до выезда)
+                 "AND check_out_date > ? " // Проверка что check_out_date > checkInDate (выезд после заезда)
+                 "AND ? < ?");             // Дополнительная проверка дат
     query.addBindValue(bedId);
     query.addBindValue(checkOutDate);
     query.addBindValue(checkInDate);
+    query.addBindValue(checkInDate);
+    query.addBindValue(checkOutDate);
 
     if (query.exec() && query.next()) {
-        return query.value(0).toInt() == 0;
+        int count = query.value(0).toInt();
+        qDebug() << "Проверка доступности койки" << bedId
+                 << "за период" << checkInDate.toString("dd.MM.yyyy")
+                 << "-" << checkOutDate.toString("dd.MM.yyyy")
+                 << "результат:" << (count == 0 ? "свободно" : "занято");
+        return count == 0;
+    } else {
+        qDebug() << "Ошибка проверки доступности:" << query.lastError().text();
+        return false;
     }
-
-    return false;
 }
-QList<QString> Database::getAllRooms()
-{
-    QList<QString> rooms;
-    QSqlQuery query("SELECT room_number FROM rooms ORDER BY room_number");
-
-    while (query.next()) {
-        rooms.append(query.value(0).toString());
-    }
-
-    return rooms;
-}
-
 // Метод для добавления категории
 bool Database::addCategory(const QString& categoryName, const QString& color)
 {
@@ -648,4 +654,45 @@ double Database::calculateRevenue(const QDate& startDate, const QDate& endDate)
     }
 
     return 0.0;
+}
+
+QVariantMap Database::getBookingInfo(const QString& roomNumber, int bedNumber, const QDate& date)
+{
+    QVariantMap info;
+
+    QSqlQuery query;
+    query.prepare("SELECT bk.id, bk.total_price, bk.paid_amount, "
+                 "c.first_name || ' ' || c.last_name as client_name "
+                 "FROM bookings bk "
+                 "JOIN beds b ON bk.bed_id = b.id "
+                 "JOIN rooms r ON b.room_id = r.id "
+                 "JOIN clients c ON bk.client_id = c.id "
+                 "WHERE r.room_number = ? "
+                 "AND b.bed_number = ? "
+                 "AND ? BETWEEN bk.check_in_date AND bk.check_out_date "
+                 "AND bk.status = 'active'");
+    query.addBindValue(roomNumber);  // Теперь roomNumber - QString
+    query.addBindValue(bedNumber);
+    query.addBindValue(date.toString("yyyy-MM-dd"));
+
+    if (query.exec() && query.next()) {
+        info["booking_id"] = query.value(0);
+        info["total_price"] = query.value(1);
+        info["paid_amount"] = query.value(2);
+        info["client_name"] = query.value(3);
+
+        // Рассчитываем процент оплаты
+        double total = info["total_price"].toDouble();
+        double paid = info["paid_amount"].toDouble();
+        if (total > 0) {
+            double percentage = (paid / total) * 100;
+            info["paid_percentage"] = qRound(percentage);
+        } else {
+            info["paid_percentage"] = 0;
+        }
+
+        info["balance"] = total - paid;
+    }
+
+    return info;
 }

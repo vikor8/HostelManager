@@ -1,0 +1,11 @@
+debug/addbookingdialog.o
+debug/addclientdialog.o
+debug/database.o
+debug/editbookingdialog.o
+debug/main.o
+debug/hostelmanager.o
+debug/moc_addbookingdialog.o
+debug/moc_addclientdialog.o
+debug/moc_database.o
+debug/moc_editbookingdialog.o
+debug/moc_hostelmanager.o

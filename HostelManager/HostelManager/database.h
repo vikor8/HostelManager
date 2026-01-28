@@ -75,6 +75,11 @@ public:
     double calculateRevenue(const QDate& startDate, const QDate& endDate);
     double calculateOccupancyRate(const QDate& startDate, const QDate& endDate);
 
+
+    QVariantMap getBookingInfo(const QString& roomNumber, int bedNumber, const QDate& date);
+
+
+
 private:
     QSqlDatabase db;
     QString databasePath;

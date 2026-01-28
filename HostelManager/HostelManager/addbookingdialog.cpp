@@ -192,13 +192,15 @@ void AddBookingDialog::updatePaidAmount()
     double balance = total - paid;
 
     if (balance > 0) {
-        balanceLabel->setText(QString("%1 руб.").arg(balance, 0, 'f', 2));
+        balanceLabel->setText(QString("Остаток: %1 руб. (%2%)")
+                              .arg(balance, 0, 'f', 2)
+                              .arg(qRound((paid / total) * 100)));
         balanceLabel->setStyleSheet("font-weight: bold; color: #FF0000;");
     } else if (balance < 0) {
         balanceLabel->setText(QString("Переплата %1 руб.").arg(-balance, 0, 'f', 2));
         balanceLabel->setStyleSheet("font-weight: bold; color: #0000FF;");
     } else {
-        balanceLabel->setText("Оплачено полностью");
+        balanceLabel->setText("Оплачено полностью ✓");
         balanceLabel->setStyleSheet("font-weight: bold; color: #008000;");
     }
 }
@@ -303,11 +305,18 @@ void AddBookingDialog::onAccept()
 
     // Проверяем доступность койки
     if (!isBedAvailable()) {
-        QMessageBox::warning(this, "Ошибка",
-            "Выбранное койко-место уже забронировано на указанные даты.\n"
-            "Пожалуйста, выберите другие даты или другую койку.");
-        return;
-    }
+          QMessageBox::warning(this, "Ошибка",
+              QString("Выбранное койко-место уже забронировано на указанные даты.\n"
+                     "Комната: %1, Койка: %2\n"
+                     "Период: %3 - %4\n\n"
+                     "Пожалуйста, выберите другие даты или другую койку.")
+                  .arg(roomCombo->currentText())
+                  .arg(bedCombo->currentText())
+                  .arg(checkInEdit->date().toString("dd.MM.yyyy"))
+                  .arg(checkOutEdit->date().toString("dd.MM.yyyy")));
+          return;
+      }
+
 
     // Проверяем стоимость
     if (priceSpin->value() <= 0) {
@@ -324,7 +333,7 @@ void AddBookingDialog::onAccept()
     accept();
 }
 
-// Остальные методы остаются без изменений
+
 void AddBookingDialog::loadClients()
 {
     if (!database || !database->isDatabaseConnected()) {
