@@ -1,11 +1,11 @@
 release/addbookingdialog.o
 release/addclientdialog.o
 release/database.o
-release/editbookingdialog.o
+release/editpaymentdialog.o
 release/main.o
 release/hostelmanager.o
 release/moc_addbookingdialog.o
 release/moc_addclientdialog.o
 release/moc_database.o
-release/moc_editbookingdialog.o
+release/moc_editpaymentdialog.o
 release/moc_hostelmanager.o

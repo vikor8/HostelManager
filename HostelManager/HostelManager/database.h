@@ -78,6 +78,10 @@ public:
 
     QVariantMap getBookingInfo(const QString& roomNumber, int bedNumber, const QDate& date);
 
+    // Методы для работы с оплатой
+    bool updatePayment(int bookingId, double paidAmount, const QString& paymentMethod = QString());
+    QVariantMap getBookingInfoByDate(const QString& roomNumber, int bedNumber, const QDate& date);
+
 
 
 private:

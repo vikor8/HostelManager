@@ -4,6 +4,7 @@
 #include "database.h"
 #include "addclientdialog.h"
 #include "addbookingdialog.h"
+#include "editpaymentdialog.h"
 
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -63,6 +64,10 @@ HostelManager::HostelManager(QWidget *parent)
     connect(ui->btnToday, &QPushButton::clicked, this, &HostelManager::on_btnToday_clicked);
     connect(ui->btnRefresh, &QPushButton::clicked, this, &HostelManager::on_btnRefresh_clicked);
     connect(ui->dateEdit, &QDateEdit::dateChanged, this, &HostelManager::on_dateEdit_dateChanged);
+
+       // Добавляем соединение для двойного клика по таблице
+    connect(ui->tableWidget, &QTableWidget::doubleClicked,
+               this, &HostelManager::onTableDoubleClicked);
 
     // Инициализируем таблицу
     initializeTable();
@@ -1920,4 +1925,87 @@ void HostelManager::onAddBooking()
     }
 
     bookingDialog->deleteLater();
+}
+
+// Слот для двойного клика
+void HostelManager::onTableDoubleClicked(const QModelIndex &index)
+{
+    // Проверяем, что клик был по столбцу с датами (столбцы с 3 по DAYS_COUNT+2)
+    if (index.column() < 3) {
+        return; // Клик по информационным столбцам (комната, койка, категория)
+    }
+
+    int row = index.row();
+    int col = index.column();
+
+    // Получаем номер комнаты и койки
+    QTableWidgetItem *roomItem = ui->tableWidget->item(row, 0);
+    QTableWidgetItem *bedItem = ui->tableWidget->item(row, 1);
+
+    if (!roomItem || !bedItem) {
+        return;
+    }
+
+    QString roomNumber = roomItem->text();
+    QString bedNumberStr = bedItem->text();
+    int bedNumber = bedNumberStr.toInt();
+
+    // Вычисляем дату для выбранного столбца
+    int dayIndex = col - 3;
+    QDate selectedDate = currentStartDate.addDays(dayIndex);
+
+    // Проверяем занятость через базу данных (самый надежный способ)
+    if (!database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    QVariantMap bookingInfo = database->getBookingInfoByDate(roomNumber, bedNumber, selectedDate);
+
+    if (bookingInfo.isEmpty()) {
+        QMessageBox::information(this, "Информация",
+            "Эта ячейка свободна. Для бронирования используйте меню 'Бронирование'.");
+        return;
+    }
+
+    // Если мы здесь, значит ячейка занята
+    int bookingId = bookingInfo["booking_id"].toInt();
+    double totalPrice = bookingInfo["total_price"].toDouble();
+    double paidAmount = bookingInfo["paid_amount"].toDouble();
+    QString paymentMethod = bookingInfo["payment_method"].toString();
+    QString clientName = bookingInfo["client_name"].toString();
+//    QDate checkInDate = QDate::fromString(bookingInfo["check_in_date"].toString(), "yyyy-MM-dd");
+//    QDate checkOutDate = QDate::fromString(bookingInfo["check_out_date"].toString(), "yyyy-MM-dd");
+
+    // Показываем диалог редактирования оплаты
+    EditPaymentDialog dialog(this);
+    dialog.setBookingInfo(roomNumber, bedNumber, selectedDate, clientName,
+                         totalPrice, paidAmount, paymentMethod);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        double newPaidAmount = dialog.paidAmount();
+        QString newPaymentMethod = dialog.paymentMethod();
+        QString notes = dialog.notes();
+
+        // Обновляем оплату в базе данных
+        if (database->updatePayment(bookingId, newPaidAmount, newPaymentMethod)) {
+            QMessageBox::information(this, "Успех",
+                QString("Оплата успешно обновлена!\n"
+                       "Новая сумма: %1 руб.\n"
+                       "Способ оплаты: %2")
+                    .arg(newPaidAmount, 0, 'f', 2)
+                    .arg(newPaymentMethod));
+
+            // Обновляем таблицу
+            updateTableColors();
+
+            // Логируем изменение
+            if (!notes.isEmpty()) {
+                qDebug() << "Примечание к оплате:" << notes;
+            }
+        } else {
+            QMessageBox::warning(this, "Ошибка",
+                "Не удалось обновить оплату. Проверьте подключение к базе данных.");
+        }
+    }
 }

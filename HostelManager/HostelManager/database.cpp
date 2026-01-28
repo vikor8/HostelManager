@@ -696,3 +696,62 @@ QVariantMap Database::getBookingInfo(const QString& roomNumber, int bedNumber, c
 
     return info;
 }
+
+//Методы для работы с оплатой
+QVariantMap Database::getBookingInfoByDate(const QString& roomNumber, int bedNumber, const QDate& date)
+{
+    QVariantMap info;
+
+    QSqlQuery query;
+    query.prepare("SELECT bk.id, bk.total_price, bk.paid_amount, bk.payment_method, "
+                 "c.first_name || ' ' || c.last_name as client_name, "
+                 "bk.check_in_date, bk.check_out_date "
+                 "FROM bookings bk "
+                 "JOIN beds b ON bk.bed_id = b.id "
+                 "JOIN rooms r ON b.room_id = r.id "
+                 "JOIN clients c ON bk.client_id = c.id "
+                 "WHERE r.room_number = ? "
+                 "AND b.bed_number = ? "
+                 "AND ? BETWEEN bk.check_in_date AND bk.check_out_date "
+                 "AND bk.status = 'active'");
+    query.addBindValue(roomNumber);
+    query.addBindValue(bedNumber);
+    query.addBindValue(date.toString("yyyy-MM-dd"));
+
+    if (query.exec() && query.next()) {
+        info["booking_id"] = query.value(0);
+        info["total_price"] = query.value(1);
+        info["paid_amount"] = query.value(2);
+        info["payment_method"] = query.value(3);
+        info["client_name"] = query.value(4);
+        info["check_in_date"] = query.value(5);
+        info["check_out_date"] = query.value(6);
+    }
+
+    return info;
+}
+
+bool Database::updatePayment(int bookingId, double paidAmount, const QString& paymentMethod)
+{
+    QSqlQuery query;
+
+    if (paymentMethod.isEmpty()) {
+        query.prepare("UPDATE bookings SET paid_amount = ? WHERE id = ?");
+        query.addBindValue(paidAmount);
+        query.addBindValue(bookingId);
+    } else {
+        query.prepare("UPDATE bookings SET paid_amount = ?, payment_method = ? WHERE id = ?");
+        query.addBindValue(paidAmount);
+        query.addBindValue(paymentMethod);
+        query.addBindValue(bookingId);
+    }
+
+    if (query.exec()) {
+        qDebug() << "Оплата обновлена для бронирования" << bookingId
+                 << "на сумму" << paidAmount << "руб.";
+        return true;
+    } else {
+        qDebug() << "Ошибка обновления оплаты:" << query.lastError().text();
+        return false;
+    }
+}

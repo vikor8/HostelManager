@@ -12,6 +12,7 @@ SOURCES += \
     addbookingdialog.cpp \
     addclientdialog.cpp \
     database.cpp \
+    editpaymentdialog.cpp \
     main.cpp \
     hostelmanager.cpp
 
@@ -19,6 +20,7 @@ HEADERS += \
     addbookingdialog.h \
     addclientdialog.h \
     database.h \
+    editpaymentdialog.h \
     hostelmanager.h
 
 FORMS += \

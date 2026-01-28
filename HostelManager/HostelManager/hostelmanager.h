@@ -65,6 +65,9 @@ private slots:
     // Слоты для бронирования
     void onAddBooking();
 
+    //Слот ля двойного клика
+    void onTableDoubleClicked(const QModelIndex &index);
+
 private:
     Ui::HostelManager *ui;
     QDate currentStartDate;
