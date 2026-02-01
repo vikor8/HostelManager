@@ -11,6 +11,7 @@ CONFIG += c++17
 SOURCES += \
     addbookingdialog.cpp \
     addclientdialog.cpp \
+    cancelbookingdialog.cpp \
     database.cpp \
     editpaymentdialog.cpp \
     main.cpp \
@@ -20,6 +21,7 @@ SOURCES += \
 HEADERS += \
     addbookingdialog.h \
     addclientdialog.h \
+    cancelbookingdialog.h \
     database.h \
     editpaymentdialog.h \
     hostelmanager.h \

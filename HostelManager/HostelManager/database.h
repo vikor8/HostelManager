@@ -84,6 +84,9 @@ public:
 
     QList<QVariantMap> getPaymentReport(const QDate& startDate, const QDate& endDate);
 
+    // Отмена бронирования
+    bool cancelBooking(int bookingId);
+
 private:
     QSqlDatabase db;
     QString databasePath;

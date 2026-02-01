@@ -1,5 +1,6 @@
 debug/addbookingdialog.o
 debug/addclientdialog.o
+debug/cancelbookingdialog.o
 debug/database.o
 debug/editpaymentdialog.o
 debug/main.o
@@ -7,6 +8,7 @@ debug/hostelmanager.o
 debug/reportwindow.o
 debug/moc_addbookingdialog.o
 debug/moc_addclientdialog.o
+debug/moc_cancelbookingdialog.o
 debug/moc_database.o
 debug/moc_editpaymentdialog.o
 debug/moc_hostelmanager.o

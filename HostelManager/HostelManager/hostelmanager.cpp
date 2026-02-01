@@ -41,6 +41,7 @@
 #include <QVBoxLayout>
 #include <QGroupBox>
 #include "reportwindow.h"
+#include "cancelbookingdialog.h"
 
 HostelManager::HostelManager(QWidget *parent)
     : QMainWindow(parent)
@@ -416,9 +417,52 @@ void HostelManager::createMenuBar()
         });
 
         QAction *cancelBookingAction = bookingMenu->addAction("&Отменить бронирование");
-        connect(cancelBookingAction, &QAction::triggered, this, [this](){
-            // Здесь можно добавить функционал отмены бронирований
-            QMessageBox::information(this, "В разработке", "Функция отмены бронирований находится в разработке");
+        cancelBookingAction->setShortcut(Qt::CTRL | Qt::Key_X);
+        connect(cancelBookingAction, &QAction::triggered, this, [this]() {
+            if (!database->isDatabaseConnected()) {
+                QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+                return;
+            }
+
+            CancelBookingDialog dialog(database, this);
+
+            if (dialog.exec() == QDialog::Accepted) {
+                int bookingId = dialog.selectedBookingId();
+                QString reason = dialog.cancellationReason();
+
+                if (bookingId <= 0) {
+                    QMessageBox::warning(this, "Ошибка", "Не выбрано бронирование для отмены");
+                    return;
+                }
+
+                // Запрашиваем подтверждение
+                QMessageBox::StandardButton confirm = QMessageBox::question(this,
+                    "Подтверждение отмены",
+                    QString("Вы уверены, что хотите отменить выбранное бронирование?\n\n"
+                           "ID бронирования: %1\n"
+                           "Причина: %2\n\n"
+                           "Это действие необратимо!")
+                        .arg(bookingId)
+                        .arg(reason.isEmpty() ? "Не указана" : reason),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::No);
+
+                if (confirm == QMessageBox::Yes) {
+                    if (database->cancelBooking(bookingId)) {
+                        QMessageBox::information(this, "Успех",
+                            "Бронирование успешно отменено!\n\n"
+                            "ID бронирования: " + QString::number(bookingId) + "\n" +
+                            "Причина: " + (reason.isEmpty() ? "Не указана" : reason));
+
+                        // Обновляем таблицу
+                        updateTableColors();
+                    } else {
+                        QMessageBox::warning(this, "Ошибка",
+                            "Не удалось отменить бронирование.\n"
+                            "Возможно, оно уже было отменено или не существует.");
+                    }
+                }
+            }
         });
 
         bookingMenu->addSeparator();

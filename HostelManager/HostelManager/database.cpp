@@ -107,6 +107,7 @@ void Database::createTables()
                "payment_method TEXT DEFAULT 'Наличные',"
                "status TEXT DEFAULT 'active',"
                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+               "cancelled_at TIMESTAMP,"
                "FOREIGN KEY (bed_id) REFERENCES beds(id),"
                "FOREIGN KEY (client_id) REFERENCES clients(id)"
                ")");
@@ -805,4 +806,47 @@ QList<QVariantMap> Database::getPaymentReport(const QDate& startDate, const QDat
     }
 
     return report;
+}
+
+// Отмена бронирования
+bool Database::cancelBooking(int bookingId)
+{
+    QSqlQuery query;
+
+    // Проверяем существование бронирования
+    query.prepare("SELECT id, status FROM bookings WHERE id = ?");
+    query.addBindValue(bookingId);
+
+    if (!query.exec() || !query.next()) {
+        qDebug() << "Бронирование с ID" << bookingId << "не найдено";
+        return false;
+    }
+
+    QString currentStatus = query.value(1).toString();
+    if (currentStatus == "cancelled") {
+        qDebug() << "Бронирование" << bookingId << "уже отменено";
+        return true; // Уже отменено
+    }
+
+    // Обновляем статус бронирования на "cancelled"
+    // ВАЖНО: в таблице bookings должна быть колонка cancelled_at
+    // Если ее нет, нужно добавить ее в запрос CREATE TABLE
+    query.prepare("UPDATE bookings SET status = 'cancelled', "
+                 "cancelled_at = CURRENT_TIMESTAMP WHERE id = ?");
+    query.addBindValue(bookingId);
+
+    if (query.exec()) {
+        qDebug() << "Бронирование" << bookingId << "успешно отменено";
+
+        // Логируем отмену в истории изменений
+        query.prepare("INSERT INTO change_history (table_name, record_id, action) "
+                     "VALUES ('bookings', ?, 'CANCEL')");
+        query.addBindValue(bookingId);
+        query.exec(); // Это второй параметр, все верно
+
+        return true;
+    } else {
+        qDebug() << "Ошибка отмены бронирования:" << query.lastError().text();
+        return false;
+    }
 }
