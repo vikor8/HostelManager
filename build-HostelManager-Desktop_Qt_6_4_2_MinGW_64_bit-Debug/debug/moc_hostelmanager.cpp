@@ -27,7 +27,7 @@ QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 namespace {
 struct qt_meta_stringdata_HostelManager_t {
-    uint offsetsAndSizes[42];
+    uint offsetsAndSizes[48];
     char stringdata0[14];
     char stringdata1[20];
     char stringdata2[1];
@@ -49,6 +49,9 @@ struct qt_meta_stringdata_HostelManager_t {
     char stringdata18[21];
     char stringdata19[12];
     char stringdata20[6];
+    char stringdata21[29];
+    char stringdata22[4];
+    char stringdata23[14];
 };
 #define QT_MOC_LITERAL(ofs, len) \
     uint(sizeof(qt_meta_stringdata_HostelManager_t::offsetsAndSizes) + ofs), len 
@@ -74,7 +77,10 @@ Q_CONSTINIT static const qt_meta_stringdata_HostelManager_t qt_meta_stringdata_H
         QT_MOC_LITERAL(243, 12),  // "onAddBooking"
         QT_MOC_LITERAL(256, 20),  // "onTableDoubleClicked"
         QT_MOC_LITERAL(277, 11),  // "QModelIndex"
-        QT_MOC_LITERAL(289, 5)   // "index"
+        QT_MOC_LITERAL(289, 5),  // "index"
+        QT_MOC_LITERAL(295, 28),  // "onCustomContextMenuRequested"
+        QT_MOC_LITERAL(324, 3),  // "pos"
+        QT_MOC_LITERAL(328, 13)   // "deleteBooking"
     },
     "HostelManager",
     "on_btnToday_clicked",
@@ -96,7 +102,10 @@ Q_CONSTINIT static const qt_meta_stringdata_HostelManager_t qt_meta_stringdata_H
     "onAddBooking",
     "onTableDoubleClicked",
     "QModelIndex",
-    "index"
+    "index",
+    "onCustomContextMenuRequested",
+    "pos",
+    "deleteBooking"
 };
 #undef QT_MOC_LITERAL
 } // unnamed namespace
@@ -107,7 +116,7 @@ Q_CONSTINIT static const uint qt_meta_data_HostelManager[] = {
       10,       // revision
        0,       // classname
        0,    0, // classinfo
-      16,   14, // methods
+      18,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -115,22 +124,24 @@ Q_CONSTINIT static const uint qt_meta_data_HostelManager[] = {
        0,       // signalCount
 
  // slots: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    0,  110,    2, 0x08,    1 /* Private */,
-       3,    0,  111,    2, 0x08,    2 /* Private */,
-       4,    1,  112,    2, 0x08,    3 /* Private */,
-       6,    0,  115,    2, 0x08,    5 /* Private */,
-       7,    0,  116,    2, 0x08,    6 /* Private */,
-       8,    0,  117,    2, 0x08,    7 /* Private */,
-       9,    0,  118,    2, 0x08,    8 /* Private */,
-      10,    0,  119,    2, 0x08,    9 /* Private */,
-      11,    0,  120,    2, 0x08,   10 /* Private */,
-      12,    0,  121,    2, 0x08,   11 /* Private */,
-      13,    0,  122,    2, 0x08,   12 /* Private */,
-      14,    0,  123,    2, 0x08,   13 /* Private */,
-      15,    0,  124,    2, 0x08,   14 /* Private */,
-      16,    0,  125,    2, 0x08,   15 /* Private */,
-      17,    0,  126,    2, 0x08,   16 /* Private */,
-      18,    1,  127,    2, 0x08,   17 /* Private */,
+       1,    0,  122,    2, 0x08,    1 /* Private */,
+       3,    0,  123,    2, 0x08,    2 /* Private */,
+       4,    1,  124,    2, 0x08,    3 /* Private */,
+       6,    0,  127,    2, 0x08,    5 /* Private */,
+       7,    0,  128,    2, 0x08,    6 /* Private */,
+       8,    0,  129,    2, 0x08,    7 /* Private */,
+       9,    0,  130,    2, 0x08,    8 /* Private */,
+      10,    0,  131,    2, 0x08,    9 /* Private */,
+      11,    0,  132,    2, 0x08,   10 /* Private */,
+      12,    0,  133,    2, 0x08,   11 /* Private */,
+      13,    0,  134,    2, 0x08,   12 /* Private */,
+      14,    0,  135,    2, 0x08,   13 /* Private */,
+      15,    0,  136,    2, 0x08,   14 /* Private */,
+      16,    0,  137,    2, 0x08,   15 /* Private */,
+      17,    0,  138,    2, 0x08,   16 /* Private */,
+      18,    1,  139,    2, 0x08,   17 /* Private */,
+      21,    1,  142,    2, 0x08,   19 /* Private */,
+      23,    0,  145,    2, 0x08,   21 /* Private */,
 
  // slots: parameters
     QMetaType::Void,
@@ -149,6 +160,8 @@ Q_CONSTINIT static const uint qt_meta_data_HostelManager[] = {
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void, 0x80000000 | 19,   20,
+    QMetaType::Void, QMetaType::QPoint,   22,
+    QMetaType::Void,
 
        0        // eod
 };
@@ -195,7 +208,12 @@ Q_CONSTINIT const QMetaObject HostelManager::staticMetaObject = { {
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'onTableDoubleClicked'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
-        QtPrivate::TypeAndForceComplete<const QModelIndex &, std::false_type>
+        QtPrivate::TypeAndForceComplete<const QModelIndex &, std::false_type>,
+        // method 'onCustomContextMenuRequested'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QPoint &, std::false_type>,
+        // method 'deleteBooking'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>
     >,
     nullptr
 } };
@@ -222,6 +240,8 @@ void HostelManager::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _i
         case 13: _t->onDeleteClient(); break;
         case 14: _t->onAddBooking(); break;
         case 15: _t->onTableDoubleClicked((*reinterpret_cast< std::add_pointer_t<QModelIndex>>(_a[1]))); break;
+        case 16: _t->onCustomContextMenuRequested((*reinterpret_cast< std::add_pointer_t<QPoint>>(_a[1]))); break;
+        case 17: _t->deleteBooking(); break;
         default: ;
         }
     }
@@ -246,13 +266,13 @@ int HostelManager::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 16)
+        if (_id < 18)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 16;
+        _id -= 18;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 16)
+        if (_id < 18)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 16;
+        _id -= 18;
     }
     return _id;
 }

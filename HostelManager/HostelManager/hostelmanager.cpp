@@ -48,6 +48,7 @@ HostelManager::HostelManager(QWidget *parent)
     , ui(new Ui::HostelManager)
     , currentStartDate(QDate::currentDate())
     , database(new Database(this))
+    , selectedBookingIdForDeletion(-1)
 {
     ui->setupUi(this);
 
@@ -67,16 +68,24 @@ HostelManager::HostelManager(QWidget *parent)
     connect(ui->btnRefresh, &QPushButton::clicked, this, &HostelManager::on_btnRefresh_clicked);
     connect(ui->dateEdit, &QDateEdit::dateChanged, this, &HostelManager::on_dateEdit_dateChanged);
 
-       // Добавляем соединение для двойного клика по таблице
+    // Добавляем соединение для двойного клика по таблице
     connect(ui->tableWidget, &QTableWidget::doubleClicked,
-               this, &HostelManager::onTableDoubleClicked);
+            this, &HostelManager::onTableDoubleClicked);
+
+    // Включаем контекстное меню для таблицы
+    ui->tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui->tableWidget, &QTableWidget::customContextMenuRequested,
+            this, &HostelManager::onCustomContextMenuRequested);
+
+    // Создаем действие для удаления бронирования
+    deleteBookingAction = new QAction("Удалить бронирование", this);
+    connect(deleteBookingAction, &QAction::triggered, this, &HostelManager::deleteBooking);
 
     // Инициализируем таблицу
     initializeTable();
 
     qDebug() << "Конструктор HostelManager завершил работу";
 }
-
 HostelManager::~HostelManager()
 {
     delete ui;
@@ -2067,6 +2076,201 @@ void HostelManager::onTableDoubleClicked(const QModelIndex &index)
         } else {
             QMessageBox::warning(this, "Ошибка",
                 "Не удалось обновить оплату. Проверьте подключение к базе данных.");
+        }
+    }
+}
+
+// Слот для отображения контекстного меню
+void HostelManager::onCustomContextMenuRequested(const QPoint &pos)
+{
+    // Сохраняем позицию для использования в других методах
+    contextMenuPos = pos;
+
+    // Получаем индекс ячейки под курсором
+    QModelIndex index = ui->tableWidget->indexAt(pos);
+
+    if (!index.isValid() || index.column() < 3) {
+        return; // Клик не по ячейке с датой
+    }
+
+    int row = index.row();
+    int col = index.column();
+
+    // Получаем номер комнаты и койки
+    QTableWidgetItem *roomItem = ui->tableWidget->item(row, 0);
+    QTableWidgetItem *bedItem = ui->tableWidget->item(row, 1);
+
+    if (!roomItem || !bedItem) {
+        return;
+    }
+
+    QString roomNumber = roomItem->text();
+    QString bedNumberStr = bedItem->text();
+    int bedNumber = bedNumberStr.toInt();
+
+    // Вычисляем дату для выбранного столбца
+    int dayIndex = col - 3;
+    QDate selectedDate = currentStartDate.addDays(dayIndex);
+
+    // Проверяем, занята ли ячейка
+    QVariantMap bookingInfo = database->getBookingInfoByDate(roomNumber, bedNumber, selectedDate);
+
+    if (bookingInfo.isEmpty()) {
+        // Ячейка свободна - не показываем меню удаления
+        return;
+    }
+
+    // Сохраняем ID бронирования для удаления
+    selectedBookingIdForDeletion = bookingInfo["booking_id"].toInt();
+
+    // Получаем информацию о бронировании для отображения в меню
+    QString clientName = bookingInfo["client_name"].toString();
+    double totalPrice = bookingInfo["total_price"].toDouble();
+    double paidAmount = bookingInfo["paid_amount"].toDouble();
+    QDate checkInDate = QDate::fromString(bookingInfo["check_in_date"].toString(), "yyyy-MM-dd");
+    QDate checkOutDate = QDate::fromString(bookingInfo["check_out_date"].toString(), "yyyy-MM-dd");
+
+    // Создаем контекстное меню
+    QMenu contextMenu(this);
+
+    // Добавляем действие с информацией
+    QAction *infoAction = contextMenu.addAction(
+        QString("Бронирование №%1\nКлиент: %2\nПериод: %3 - %4\nСтоимость: %5 руб.\nОплачено: %6 руб.")
+            .arg(selectedBookingIdForDeletion)
+            .arg(clientName)
+            .arg(checkInDate.toString("dd.MM.yyyy"))
+            .arg(checkOutDate.toString("dd.MM.yyyy"))
+            .arg(totalPrice, 0, 'f', 2)
+            .arg(paidAmount, 0, 'f', 2)
+    );
+    infoAction->setEnabled(false); // Только информация, не кликабельно
+
+    contextMenu.addSeparator();
+
+    // Настраиваем действие удаления
+    QString deleteText;
+    if (paidAmount > 0) {
+        deleteText = QString("Удалить бронирование (возврат %1 руб. потребуется вручную)")
+                        .arg(paidAmount, 0, 'f', 2);
+    } else {
+        deleteText = "Удалить бронирование";
+    }
+    deleteBookingAction->setText(deleteText);
+
+    // Добавляем действие в меню
+    contextMenu.addAction(deleteBookingAction);
+
+    contextMenu.addSeparator();
+
+    // Добавляем действие отмены
+    QAction *cancelAction = contextMenu.addAction("Отмена");
+    connect(&contextMenu, &QMenu::triggered, cancelAction, [&](){
+        // Просто закрываем меню
+    });
+
+    // Показываем контекстное меню
+    contextMenu.exec(ui->tableWidget->viewport()->mapToGlobal(pos));
+}
+
+// Слот для удаления бронирования
+void HostelManager::deleteBooking()
+{
+    if (selectedBookingIdForDeletion <= 0) {
+        return;
+    }
+
+    // Получаем информацию о бронировании для подтверждения
+    QSqlQuery query(database->getDatabase());
+    query.prepare("SELECT "
+                  "r.room_number, "
+                  "b.bed_number, "
+                  "c.last_name || ' ' || c.first_name as client_name, "
+                  "bk.check_in_date, "
+                  "bk.check_out_date, "
+                  "bk.total_price, "
+                  "bk.paid_amount "
+                  "FROM bookings bk "
+                  "JOIN beds b ON bk.bed_id = b.id "
+                  "JOIN rooms r ON b.room_id = r.id "
+                  "JOIN clients c ON bk.client_id = c.id "
+                  "WHERE bk.id = ?");
+    query.addBindValue(selectedBookingIdForDeletion);
+
+    QString roomNumber, bedNumberStr, clientName;
+    QDate checkInDate, checkOutDate;
+    double totalPrice = 0, paidAmount = 0;
+
+    if (query.exec() && query.next()) {
+        roomNumber = query.value(0).toString();
+        bedNumberStr = query.value(1).toString();
+        clientName = query.value(2).toString();
+        checkInDate = QDate::fromString(query.value(3).toString(), "yyyy-MM-dd");
+        checkOutDate = QDate::fromString(query.value(4).toString(), "yyyy-MM-dd");
+        totalPrice = query.value(5).toDouble();
+        paidAmount = query.value(6).toDouble();
+    }
+
+    // Запрашиваем подтверждение
+    QString message;
+    if (paidAmount > 0) {
+        message = QString("Вы уверены, что хотите удалить бронирование?\n\n"
+                         "Детали бронирования:\n"
+                         "ID: %1\n"
+                         "Комната: %2, Койка: %3\n"
+                         "Клиент: %4\n"
+                         "Период: %5 - %6\n"
+                         "Общая стоимость: %7 руб.\n"
+                         "Оплачено: %8 руб.\n\n"
+                         "ВНИМАНИЕ: Оплаченные средства (%8 руб.) будут удалены из системы!\n"
+                         "Для возврата денег клиенту необходимо обратиться в бухгалтерию.\n\n"
+                         "Это действие необратимо!")
+                    .arg(selectedBookingIdForDeletion)
+                    .arg(roomNumber)
+                    .arg(bedNumberStr)
+                    .arg(clientName)
+                    .arg(checkInDate.toString("dd.MM.yyyy"))
+                    .arg(checkOutDate.toString("dd.MM.yyyy"))
+                    .arg(totalPrice, 0, 'f', 2)
+                    .arg(paidAmount, 0, 'f', 2);
+    } else {
+        message = QString("Вы уверены, что хотите удалить бронирование?\n\n"
+                         "Детали бронирования:\n"
+                         "ID: %1\n"
+                         "Комната: %2, Койка: %3\n"
+                         "Клиент: %4\n"
+                         "Период: %5 - %6\n"
+                         "Общая стоимость: %7 руб.\n\n"
+                         "Это действие необратимо!")
+                    .arg(selectedBookingIdForDeletion)
+                    .arg(roomNumber)
+                    .arg(bedNumberStr)
+                    .arg(clientName)
+                    .arg(checkInDate.toString("dd.MM.yyyy"))
+                    .arg(checkOutDate.toString("dd.MM.yyyy"))
+                    .arg(totalPrice, 0, 'f', 2);
+    }
+
+    QMessageBox::StandardButton reply = QMessageBox::critical(this,
+        "Подтверждение удаления",
+        message,
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+
+    if (reply == QMessageBox::Yes) {
+        // Удаляем бронирование
+        if (database->removeBooking(selectedBookingIdForDeletion)) {
+            QMessageBox::information(this, "Успех",
+                QString("Бронирование №%1 успешно удалено!")
+                    .arg(selectedBookingIdForDeletion));
+
+            // Обновляем таблицу
+            updateTableColors();
+
+            // Сбрасываем ID
+            selectedBookingIdForDeletion = -1;
+        } else {
+            QMessageBox::warning(this, "Ошибка",
+                "Не удалось удалить бронирование. Проверьте подключение к базе данных.");
         }
     }
 }

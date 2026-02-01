@@ -61,6 +61,7 @@ public:
                    const QDate& checkOutDate, double totalPrice,
                    double paidAmount = 0, const QString& paymentMethod = "Наличные");
     bool removeBooking(int bookingId);
+        bool cancelBooking(int bookingId);
 
     // Методы для проверки доступности
     bool isBedAvailable(int bedId, const QDate& checkInDate, const QDate& checkOutDate);
@@ -84,8 +85,8 @@ public:
 
     QList<QVariantMap> getPaymentReport(const QDate& startDate, const QDate& endDate);
 
-    // Отмена бронирования
-    bool cancelBooking(int bookingId);
+
+
 
 private:
     QSqlDatabase db;

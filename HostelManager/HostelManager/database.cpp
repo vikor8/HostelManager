@@ -850,3 +850,18 @@ bool Database::cancelBooking(int bookingId)
         return false;
     }
 }
+
+bool Database::removeBooking(int bookingId)
+{
+    QSqlQuery query;
+    query.prepare("DELETE FROM bookings WHERE id = ?");
+    query.addBindValue(bookingId);
+
+    if (query.exec()) {
+        qDebug() << "Бронирование" << bookingId << "успешно удалено из базы данных";
+        return true;
+    } else {
+        qDebug() << "Ошибка удаления бронирования:" << query.lastError().text();
+        return false;
+    }
+}

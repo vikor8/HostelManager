@@ -68,6 +68,10 @@ private slots:
     //Слот ля двойного клика
     void onTableDoubleClicked(const QModelIndex &index);
 
+    // Удаление бронирования
+    void onCustomContextMenuRequested(const QPoint &pos);
+        void deleteBooking();
+
 private:
     Ui::HostelManager *ui;
     QDate currentStartDate;
@@ -80,6 +84,10 @@ private:
     void createMenuBar();
     void initializeDatabase();
     void updateRoomIdMap(); // Обновление карты ID комнат
+
+    QAction *deleteBookingAction; // Действие для удаления бронирования
+        int selectedBookingIdForDeletion; // ID бронирования для удаления
+        QPoint contextMenuPos; // Позиция для контекстного меню
 };
 
 #endif // HOSTELMANAGER_H
