@@ -755,3 +755,54 @@ bool Database::updatePayment(int bookingId, double paidAmount, const QString& pa
         return false;
     }
 }
+
+QList<QVariantMap> Database::getPaymentReport(const QDate& startDate, const QDate& endDate)
+{
+    QList<QVariantMap> report;
+
+    QSqlQuery query;
+    query.prepare("SELECT "
+                  "bk.check_in_date, "
+                  "bk.check_out_date, "
+                  "r.room_number, "
+                  "b.bed_number, "
+                  "c.last_name || ' ' || c.first_name as client_name, "
+                  "bk.total_price, "
+                  "bk.paid_amount, "
+                  "bk.payment_method, "
+                  "bk.status "
+                  "FROM bookings bk "
+                  "JOIN beds b ON bk.bed_id = b.id "
+                  "JOIN rooms r ON b.room_id = r.id "
+                  "JOIN clients c ON bk.client_id = c.id "
+                  "WHERE bk.status = 'active' "
+                  "AND bk.check_in_date <= ? "
+                  "AND bk.check_out_date >= ? "
+                  "ORDER BY bk.check_in_date, r.room_number, b.bed_number");
+    query.addBindValue(endDate.toString("yyyy-MM-dd"));
+    query.addBindValue(startDate.toString("yyyy-MM-dd"));
+
+    if (query.exec()) {
+        while (query.next()) {
+            QVariantMap item;
+            item["check_in_date"] = query.value(0);
+            item["check_out_date"] = query.value(1);
+            item["room_number"] = query.value(2);
+            item["bed_number"] = query.value(3);
+            item["client_name"] = query.value(4);
+            item["total_price"] = query.value(5);
+            item["paid_amount"] = query.value(6);
+            item["payment_method"] = query.value(7);
+            item["status"] = query.value(8);
+
+            // Рассчитываем остаток
+            double total = item["total_price"].toDouble();
+            double paid = item["paid_amount"].toDouble();
+            item["balance"] = total - paid;
+
+            report.append(item);
+        }
+    }
+
+    return report;
+}

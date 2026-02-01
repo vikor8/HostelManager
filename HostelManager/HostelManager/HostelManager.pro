@@ -1,4 +1,4 @@
-QT       += core gui sql
+QT       += core gui sql printsupport
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -14,14 +14,16 @@ SOURCES += \
     database.cpp \
     editpaymentdialog.cpp \
     main.cpp \
-    hostelmanager.cpp
+    hostelmanager.cpp \
+    reportwindow.cpp
 
 HEADERS += \
     addbookingdialog.h \
     addclientdialog.h \
     database.h \
     editpaymentdialog.h \
-    hostelmanager.h
+    hostelmanager.h \
+    reportwindow.h
 
 FORMS += \
     hostelmanager.ui

@@ -82,7 +82,7 @@ public:
     bool updatePayment(int bookingId, double paidAmount, const QString& paymentMethod = QString());
     QVariantMap getBookingInfoByDate(const QString& roomNumber, int bedNumber, const QDate& date);
 
-
+    QList<QVariantMap> getPaymentReport(const QDate& startDate, const QDate& endDate);
 
 private:
     QSqlDatabase db;

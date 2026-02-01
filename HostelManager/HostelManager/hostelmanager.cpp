@@ -40,6 +40,7 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QGroupBox>
+#include "reportwindow.h"
 
 HostelManager::HostelManager(QWidget *parent)
     : QMainWindow(parent)
@@ -465,7 +466,23 @@ void HostelManager::createMenuBar()
             QMessageBox::information(this, "Статистика бронирований", stats);
         });
 
+        // Создаем меню "Отчеты"
+        QMenu *reportsMenu = menuBar->addMenu("&Отчеты");
 
+        QAction *reportsAction = reportsMenu->addAction("&Открыть отчеты");
+        reportsAction->setShortcut(Qt::Key_F8);
+        connect(reportsAction, &QAction::triggered, this, [this]() {
+            if (!database->isDatabaseConnected()) {
+                QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+                return;
+            }
+
+            ReportWindow *reportWindow = new ReportWindow(database);
+            reportWindow->setAttribute(Qt::WA_DeleteOnClose);
+            reportWindow->show();
+            reportWindow->raise();
+            reportWindow->activateWindow();
+        });
 
 
     // Создаем меню "О программе"
@@ -548,7 +565,7 @@ void HostelManager::onAddRoom()
     connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     // Проверяем ввод
-    connect(roomNumberEdit, &QLineEdit::textChanged, [&dialog, roomNumberEdit, buttonBox]() {
+    connect(roomNumberEdit, &QLineEdit::textChanged, [ roomNumberEdit, buttonBox]() {
         bool isValid = !roomNumberEdit->text().trimmed().isEmpty();
         buttonBox->button(QDialogButtonBox::Ok)->setEnabled(isValid);
     });
