@@ -64,7 +64,7 @@ void Database::createTables()
                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                "room_number TEXT UNIQUE NOT NULL,"
                "category TEXT NOT NULL,"
-               "beds_count INTEGER DEFAULT 4,"
+               "beds_count INTEGER NOT NULL,"
                "description TEXT,"
                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
                "FOREIGN KEY (category) REFERENCES room_categories(category_name)"
@@ -146,16 +146,16 @@ void Database::createTriggers()
 {
     QSqlQuery query;
 
-    // Триггер для автоматического создания кроватей при добавлении комнаты
-    query.exec("CREATE TRIGGER IF NOT EXISTS create_beds_after_room_insert "
-               "AFTER INSERT ON rooms "
-               "BEGIN "
-               "   INSERT INTO beds (room_id, bed_number, price_per_day) "
-               "   SELECT NEW.id, 1, 500.00 "
-               "   UNION ALL SELECT NEW.id, 2, 500.00 "
-               "   UNION ALL SELECT NEW.id, 3, 500.00 "
-               "   UNION ALL SELECT NEW.id, 4, 500.00; "
-               "END");
+//    // Триггер для автоматического создания кроватей при добавлении комнаты
+//    query.exec("CREATE TRIGGER IF NOT EXISTS create_beds_after_room_insert "
+//               "AFTER INSERT ON rooms "
+//               "BEGIN "
+//               "   INSERT INTO beds (room_id, bed_number, price_per_day) "
+//               "   SELECT NEW.id, 1, 500.00 "
+//               "   UNION ALL SELECT NEW.id, 2, 500.00 "
+//               "   UNION ALL SELECT NEW.id, 3, 500.00 "
+//               "   UNION ALL SELECT NEW.id, 4, 500.00; "
+//               "END");
 
     // Триггер для логирования изменений в бронированиях
     query.exec("CREATE TRIGGER IF NOT EXISTS log_booking_changes "
@@ -237,21 +237,21 @@ void Database::seedTestData()
         query.exec();
     }
 
-    // Добавляем тестовые комнаты
-    QStringList rooms = {"101", "102", "103", "104", "105", "201", "202", "203", "204", "205"};
-    QMap<QString, QString> categories = {
-        {"101", "Эконом"}, {"102", "Эконом"}, {"103", "Стандарт"},
-        {"104", "Стандарт"}, {"105", "Комфорт"}, {"201", "Эконом"},
-        {"202", "Эконом"}, {"203", "Стандарт"}, {"204", "Комфорт"},
-        {"205", "Люкс"}
-    };
+//    // Добавляем тестовые комнаты
+//    QStringList rooms = {"101", "102", "103", "104", "105", "201", "202", "203", "204", "205"};
+//    QMap<QString, QString> categories = {
+//        {"101", "Эконом"}, {"102", "Эконом"}, {"103", "Стандарт"},
+//        {"104", "Стандарт"}, {"105", "Комфорт"}, {"201", "Эконом"},
+//        {"202", "Эконом"}, {"203", "Стандарт"}, {"204", "Комфорт"},
+//        {"205", "Люкс"}
+//    };
 
-    for (const QString& room : rooms) {
-        query.prepare("INSERT INTO rooms (room_number, category) VALUES (?, ?)");
-        query.addBindValue(room);
-        query.addBindValue(categories.value(room, "Стандарт"));
-        query.exec();
-    }
+//    for (const QString& room : rooms) {
+//        query.prepare("INSERT INTO rooms (room_number, category) VALUES (?, ?)");
+//        query.addBindValue(room);
+//        query.addBindValue(categories.value(room, "Стандарт"));
+//        query.exec();
+//    }
 
     // Обновляем цены кроватей в зависимости от категории
     query.exec("UPDATE beds SET price_per_day = "
@@ -284,23 +284,23 @@ void Database::seedTestData()
         query.exec();
     }
 
-    // Добавляем тестовые бронирования
-    QDate today = QDate::currentDate();
-    for (int i = 1; i <= 10; i++) {
-        int bedId = i;
-        int clientId = (i % 8) + 1;
-        QDate checkIn = today.addDays(i * 2);
-        QDate checkOut = checkIn.addDays(3 + (i % 4));
+//    // Добавляем тестовые бронирования
+//    QDate today = QDate::currentDate();
+//    for (int i = 1; i <= 10; i++) {
+//        int bedId = i;
+//        int clientId = (i % 8) + 1;
+//        QDate checkIn = today.addDays(i * 2);
+//        QDate checkOut = checkIn.addDays(3 + (i % 4));
 
-        query.prepare("INSERT INTO bookings (bed_id, client_id, check_in_date, check_out_date, total_price) "
-                     "VALUES (?, ?, ?, ?, ?)");
-        query.addBindValue(bedId);
-        query.addBindValue(clientId);
-        query.addBindValue(checkIn.toString("yyyy-MM-dd"));
-        query.addBindValue(checkOut.toString("yyyy-MM-dd"));
-        query.addBindValue((checkIn.daysTo(checkOut)) * 500.00);
-        query.exec();
-    }
+//        query.prepare("INSERT INTO bookings (bed_id, client_id, check_in_date, check_out_date, total_price) "
+//                     "VALUES (?, ?, ?, ?, ?)");
+//        query.addBindValue(bedId);
+//        query.addBindValue(clientId);
+//        query.addBindValue(checkIn.toString("yyyy-MM-dd"));
+//        query.addBindValue(checkOut.toString("yyyy-MM-dd"));
+//        query.addBindValue((checkIn.daysTo(checkOut)) * 500.00);
+//        query.exec();
+//    }
 
     // Добавляем дополнительные услуги
     QList<QPair<QString, double>> services = {

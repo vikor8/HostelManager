@@ -1,0 +1,16 @@
+release/addbookingdialog.o
+release/addclientdialog.o
+release/cancelbookingdialog.o
+release/database.o
+release/editpaymentdialog.o
+release/main.o
+release/hostelmanager.o
+release/reportwindow.o
+release/qrc_resources.o
+release/moc_addbookingdialog.o
+release/moc_addclientdialog.o
+release/moc_cancelbookingdialog.o
+release/moc_database.o
+release/moc_editpaymentdialog.o
+release/moc_hostelmanager.o
+release/moc_reportwindow.o

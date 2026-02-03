@@ -1486,18 +1486,27 @@ void HostelManager::initializeTable()
         // Обновляем заголовки
         updateTableHeaders();
 
-        // Получаем данные из базы данных или используем тестовые
+        // Получаем данные из базы данных
         QStringList rooms;
         QMap<QString, QString> roomCategories;
+        QMap<QString, int> roomBedsCount; // room_number -> количество коек
 
         if (database->isDatabaseConnected()) {
             QSqlQuery query(database->getDatabase());
-            query.exec("SELECT room_number, category FROM rooms ORDER BY room_number");
+            query.exec("SELECT r.room_number, r.category, r.beds_count FROM rooms r "
+                       "WHERE EXISTS (SELECT 1 FROM beds b WHERE b.room_id = r.id AND b.is_active = 1) "
+                       "ORDER BY r.room_number");
+
             while (query.next()) {
                 QString roomNumber = query.value(0).toString();
                 QString category = query.value(1).toString();
+                int bedsCount = query.value(2).toInt(); // Берем из rooms.beds_count!
+
                 rooms.append(roomNumber);
                 roomCategories.insert(roomNumber, category);
+                roomBedsCount.insert(roomNumber, bedsCount);
+
+                qDebug() << "Комната:" << roomNumber << "Категория:" << category << "Койки:" << bedsCount;
             }
         } else {
             // Если база данных не подключена, используем тестовые данные
@@ -1507,52 +1516,68 @@ void HostelManager::initializeTable()
                 {"104", "Стандарт"}, {"105", "Комфорт"}, {"201", "Эконом"},
                 {"202", "Эконом"}, {"203", "Стандарт"}, {"204", "Комфорт"}, {"205", "Люкс"}
             };
+
+            // Для тестовых данных устанавливаем по 4 койки на комнату
+            for (const QString& room : rooms) {
+                roomBedsCount.insert(room, 4);
+            }
         }
 
-        // Рассчитываем количество строк: количество комнат * 4 кровати на комнату
-        int rowCount = rooms.size() * 4;
-        ui->tableWidget->setRowCount(rowCount);
+        // Рассчитываем общее количество строк: сумма beds_count для всех комнат
+        int totalRows = 0;
+        for (const QString& room : rooms) {
+            totalRows += roomBedsCount.value(room, 4); // Берем из roomBedsCount
+        }
 
-        qDebug() << "Создана таблица:" << rowCount << "строк," << totalColumns << "столбцов";
+        ui->tableWidget->setRowCount(totalRows);
+
+        qDebug() << "Создана таблица:" << totalRows << "строк (койко-мест)," << totalColumns << "столбцов";
 
         // Заполняем таблицу данными
-        for (int row = 0; row < rowCount; ++row) {
-            int roomIndex = row / 4; // 4 кровати на комнату
-            int bedIndex = row % 4;
+        int currentRow = 0;
+        for (int roomIndex = 0; roomIndex < rooms.size(); ++roomIndex) {
+            QString roomNumber = rooms[roomIndex];
+            int bedsCount = roomBedsCount.value(roomNumber, 4);
+            QString category = roomCategories.value(roomNumber, "Стандарт");
 
-            if (roomIndex < rooms.size()) {
-                QString roomNumber = rooms[roomIndex];
+            // Создаем строки для каждой койки в комнате
+            for (int bedIndex = 1; bedIndex <= bedsCount; ++bedIndex) {
+                if (currentRow >= totalRows) {
+                    qDebug() << "Выход за границы таблицы! currentRow:" << currentRow << "totalRows:" << totalRows;
+                    break;
+                }
 
                 // Номер комнаты
                 QTableWidgetItem *roomItem = new QTableWidgetItem(roomNumber);
                 roomItem->setTextAlignment(Qt::AlignCenter);
                 roomItem->setFlags(roomItem->flags() & ~Qt::ItemIsEditable);
-                ui->tableWidget->setItem(row, 0, roomItem);
+                ui->tableWidget->setItem(currentRow, 0, roomItem);
 
                 // Номер койки
-                QTableWidgetItem *bedItem = new QTableWidgetItem(QString::number(bedIndex + 1));
+                QTableWidgetItem *bedItem = new QTableWidgetItem(QString::number(bedIndex));
                 bedItem->setTextAlignment(Qt::AlignCenter);
                 bedItem->setFlags(bedItem->flags() & ~Qt::ItemIsEditable);
-                ui->tableWidget->setItem(row, 1, bedItem);
+                ui->tableWidget->setItem(currentRow, 1, bedItem);
 
                 // Категория
-                QString category = roomCategories.value(roomNumber, "Стандарт");
                 QTableWidgetItem *categoryItem = new QTableWidgetItem(category);
                 categoryItem->setTextAlignment(Qt::AlignCenter);
                 categoryItem->setFlags(categoryItem->flags() & ~Qt::ItemIsEditable);
-                ui->tableWidget->setItem(row, 2, categoryItem);
+                ui->tableWidget->setItem(currentRow, 2, categoryItem);
 
                 // Заполняем столбцы дней
                 for (int col = 3; col < totalColumns; ++col) {
                     QTableWidgetItem *dayItem = new QTableWidgetItem("");
                     dayItem->setTextAlignment(Qt::AlignCenter);
                     dayItem->setFlags(dayItem->flags() & ~Qt::ItemIsEditable);
-                    ui->tableWidget->setItem(row, col, dayItem);
+                    ui->tableWidget->setItem(currentRow, col, dayItem);
                 }
+
+                currentRow++;
             }
         }
 
-        qDebug() << "Ячейки созданы";
+        qDebug() << "Создано" << currentRow << "строк из" << totalRows << "запланированных";
 
         // Настраиваем ширину столбцов
         ui->tableWidget->setColumnWidth(0, 120);  // Номер комнаты
@@ -1568,7 +1593,7 @@ void HostelManager::initializeTable()
         ui->tableWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
         // Устанавливаем высоту строк
-        for (int row = 0; row < rowCount; ++row) {
+        for (int row = 0; row < totalRows; ++row) {
             ui->tableWidget->setRowHeight(row, 25);
         }
 
