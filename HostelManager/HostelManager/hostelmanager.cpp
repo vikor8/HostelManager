@@ -689,6 +689,7 @@ void HostelManager::onAddRoom()
 }
 
 // Слот для редактирования комнаты
+// Слот для редактирования комнаты
 void HostelManager::onEditRoom()
 {
     if (!database->isDatabaseConnected()) {
@@ -701,13 +702,14 @@ void HostelManager::onEditRoom()
     QMap<QString, QVariant> roomData; // room_number -> (id, category, beds_count)
 
     QSqlQuery query(database->getDatabase());
-    query.exec("SELECT id, room_number, category, beds_count FROM rooms ORDER BY room_number");
+    query.exec("SELECT id, room_number, category, beds_count FROM rooms "
+               "ORDER BY room_number");
 
     while (query.next()) {
         int id = query.value(0).toInt();
         QString roomNumber = query.value(1).toString();
         QString category = query.value(2).toString();
-        int bedsCount = query.value(3).toInt();
+        int bedsCount = query.value(3).toInt(); // Берем из rooms.beds_count
 
         roomsList << roomNumber;
         roomData[roomNumber] = QVariantList() << id << category << bedsCount;
@@ -727,19 +729,67 @@ void HostelManager::onEditRoom()
         return;
     }
 
-    // Получаем данные о выбранной комнате
+    // Получаем данные о выбранной комнате из roomData
     QVariantList data = roomData[roomNumber].toList();
     int roomId = data[0].toInt();
     QString currentCategory = data[1].toString();
-    int currentBedsCount = data[2].toInt();
+    int currentBedsCount = data[2].toInt(); // Берем из rooms.beds_count
 
-    // Получаем текущую цену (берем цену первой койки)
+    qDebug() << "Редактирование комнаты" << roomNumber
+             << "ID:" << roomId
+             << "Категория:" << currentCategory
+             << "Количество коек (из rooms):" << currentBedsCount;
+
+    // Получаем текущую цену (берем цену первой активной койки)
     double currentPrice = 500.0;
     QSqlQuery priceQuery(database->getDatabase());
-    priceQuery.prepare("SELECT price_per_day FROM beds WHERE room_id = ? LIMIT 1");
+    priceQuery.prepare("SELECT price_per_day FROM beds WHERE room_id = ? AND is_active = 1 ORDER BY bed_number LIMIT 1");
     priceQuery.addBindValue(roomId);
     if (priceQuery.exec() && priceQuery.next()) {
         currentPrice = priceQuery.value(0).toDouble();
+    }
+
+    // Получаем реальное количество активных коек для проверки
+    QSqlQuery activeBedsQuery(database->getDatabase());
+    activeBedsQuery.prepare("SELECT COUNT(*) FROM beds WHERE room_id = ? AND is_active = 1");
+    activeBedsQuery.addBindValue(roomId);
+
+    int activeBedsCount = currentBedsCount;
+    if (activeBedsQuery.exec() && activeBedsQuery.next()) {
+        activeBedsCount = activeBedsQuery.value(0).toInt();
+
+        // Если есть рассинхронизация, предлагаем исправить
+        if (activeBedsCount != currentBedsCount) {
+            qDebug() << "Обнаружена рассинхронизация! rooms.beds_count =" << currentBedsCount
+                     << "активных коек в beds =" << activeBedsCount;
+
+            QMessageBox::StandardButton fixButton = QMessageBox::question(this, "Расхождение данных",
+                QString("Обнаружено расхождение в данных:\n\n"
+                       "В таблице rooms указано: %1 койки\n"
+                       "В таблице beds активно: %2 койки\n\n"
+                       "Хотите синхронизировать данные?\n"
+                       "(Использовать реальное количество активных коек: %2)")
+                    .arg(currentBedsCount)
+                    .arg(activeBedsCount),
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+                QMessageBox::Yes);
+
+            if (fixButton == QMessageBox::Yes) {
+                // Обновляем rooms.beds_count
+                QSqlQuery updateCountQuery(database->getDatabase());
+                updateCountQuery.prepare("UPDATE rooms SET beds_count = ? WHERE id = ?");
+                updateCountQuery.addBindValue(activeBedsCount);
+                updateCountQuery.addBindValue(roomId);
+
+                if (updateCountQuery.exec()) {
+                    currentBedsCount = activeBedsCount;
+                    QMessageBox::information(this, "Синхронизация",
+                        "Данные успешно синхронизированы!");
+                }
+            } else if (fixButton == QMessageBox::Cancel) {
+                return; // Отмена редактирования
+            }
+        }
     }
 
     // Получаем список категорий из базы данных
@@ -748,25 +798,36 @@ void HostelManager::onEditRoom()
     // Создаем диалоговое окно
     QDialog dialog(this);
     dialog.setWindowTitle("Редактировать комнату: " + roomNumber);
-    dialog.setFixedSize(400, 350);
+    dialog.setFixedSize(450, 400);
 
-    QFormLayout *layout = new QFormLayout(&dialog);
+    QVBoxLayout *mainLayout = new QVBoxLayout(&dialog);
+    QFormLayout *formLayout = new QFormLayout();
 
+    // Информация о комнате
     QLabel *roomLabel = new QLabel(roomNumber, &dialog);
-    roomLabel->setStyleSheet("font-weight: bold; font-size: 14px;");
-    layout->addRow("Номер комнаты:", roomLabel);
+    roomLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: #2C3E50;");
+    formLayout->addRow("Номер комнаты:", roomLabel);
 
+    // Информация о текущем количестве коек
+    QLabel *currentBedsInfo = new QLabel(
+        QString("Текущее количество коек: <b>%1</b>").arg(currentBedsCount),
+        &dialog);
+    currentBedsInfo->setStyleSheet("color: #7F8C8D;");
+    formLayout->addRow("", currentBedsInfo);
+
+    // Поле для изменения количества коек
     QSpinBox *bedsCountSpin = new QSpinBox(&dialog);
-    bedsCountSpin->setRange(1, 10);
+    bedsCountSpin->setRange(1, 20);
     bedsCountSpin->setValue(currentBedsCount);
-    layout->addRow("Количество коек:", bedsCountSpin);
+    bedsCountSpin->setSuffix(" койки");
+    formLayout->addRow("Новое количество коек:", bedsCountSpin);
 
-    // Комбобокс с категориями из базы данных
+    // Комбобокс с категориями
     QComboBox *categoryCombo = new QComboBox(&dialog);
     for (const auto& category : categories) {
         categoryCombo->addItem(category.first);
 
-        // Устанавливаем цвет фона для элемента (ИСПРАВЛЕНО)
+        // Устанавливаем цвет фона для элемента
         QColor color(category.second);
         if (color.isValid()) {
             categoryCombo->setItemData(categoryCombo->count() - 1, QBrush(color), Qt::BackgroundRole);
@@ -777,27 +838,59 @@ void HostelManager::onEditRoom()
     }
 
     // Устанавливаем текущую категорию
-    int index = categoryCombo->findText(currentCategory);
-    if (index >= 0) {
-        categoryCombo->setCurrentIndex(index);
+    int categoryIndex = categoryCombo->findText(currentCategory);
+    if (categoryIndex >= 0) {
+        categoryCombo->setCurrentIndex(categoryIndex);
     }
 
-    layout->addRow("Категория:", categoryCombo);
+    formLayout->addRow("Категория:", categoryCombo);
 
+    // Цена за день
     QDoubleSpinBox *priceSpin = new QDoubleSpinBox(&dialog);
     priceSpin->setRange(100, 10000);
     priceSpin->setValue(currentPrice);
     priceSpin->setSuffix(" руб./день");
     priceSpin->setDecimals(2);
-    layout->addRow("Стоимость за день:", priceSpin);
+    priceSpin->setSingleStep(100);
+    formLayout->addRow("Стоимость за день:", priceSpin);
+
+    mainLayout->addLayout(formLayout);
 
     // Чекбокс для обновления цены всех коек
     QCheckBox *updateAllBedsCheck = new QCheckBox("Обновить цену для всех коек в комнате", &dialog);
     updateAllBedsCheck->setChecked(true);
-    layout->addRow("", updateAllBedsCheck);
+    updateAllBedsCheck->setStyleSheet("margin-top: 10px;");
+    mainLayout->addWidget(updateAllBedsCheck);
 
-    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
-    layout->addRow(buttonBox);
+    // Предупреждение при уменьшении количества коек
+    QLabel *warningLabel = new QLabel("", &dialog);
+    warningLabel->setStyleSheet("color: #E74C3C; font-style: italic; padding: 5px;");
+    warningLabel->setVisible(false);
+    warningLabel->setWordWrap(true);
+    mainLayout->addWidget(warningLabel);
+
+    // Соединяем изменение количества коек с показом предупреждения
+    connect(bedsCountSpin, QOverload<int>::of(&QSpinBox::valueChanged), [=](int newValue) {
+        if (newValue < currentBedsCount) {
+            int diff = currentBedsCount - newValue;
+            warningLabel->setText(QString(
+                "⚠ Внимание: количество коек будет уменьшено на %1.\n"
+                "Койки с номерами больше %2 будут помечены как неактивные.")
+                .arg(diff).arg(newValue));
+            warningLabel->setVisible(true);
+        } else {
+            warningLabel->setVisible(false);
+        }
+    });
+
+    mainLayout->addStretch();
+
+    // Кнопки
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel,
+        Qt::Horizontal, &dialog);
+
+    mainLayout->addWidget(buttonBox);
 
     connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
@@ -808,74 +901,136 @@ void HostelManager::onEditRoom()
         double newPrice = priceSpin->value();
         bool updateAllBeds = updateAllBedsCheck->isChecked();
 
-        // Обновляем данные комнаты
-        QSqlQuery updateQuery(database->getDatabase());
-        updateQuery.prepare("UPDATE rooms SET category = ?, beds_count = ? WHERE id = ?");
-        updateQuery.addBindValue(newCategory);
-        updateQuery.addBindValue(newBedsCount);
-        updateQuery.addBindValue(roomId);
+        // Начинаем транзакцию для атомарности
+        QSqlDatabase::database().transaction();
 
-        if (!updateQuery.exec()) {
-            QMessageBox::warning(this, "Ошибка", "Не удалось обновить данные комнаты: " + updateQuery.lastError().text());
-            return;
-        }
+        try {
+            // 1. Обновляем данные комнаты (главное - rooms.beds_count!)
+            QSqlQuery updateRoomQuery(database->getDatabase());
+            updateRoomQuery.prepare("UPDATE rooms SET category = ?, beds_count = ? WHERE id = ?");
+            updateRoomQuery.addBindValue(newCategory);
+            updateRoomQuery.addBindValue(newBedsCount); // Сохраняем новое количество!
+            updateRoomQuery.addBindValue(roomId);
 
-        // Обновляем цену коек
-        if (updateAllBeds) {
-            QSqlQuery priceUpdateQuery(database->getDatabase());
-            priceUpdateQuery.prepare("UPDATE beds SET price_per_day = ? WHERE room_id = ?");
-            priceUpdateQuery.addBindValue(newPrice);
-            priceUpdateQuery.addBindValue(roomId);
-
-            if (!priceUpdateQuery.exec()) {
-                QMessageBox::warning(this, "Ошибка", "Не удалось обновить цены коек: " + priceUpdateQuery.lastError().text());
+            if (!updateRoomQuery.exec()) {
+                QSqlDatabase::database().rollback();
+                QMessageBox::warning(this, "Ошибка",
+                    "Не удалось обновить данные комнаты: " + updateRoomQuery.lastError().text());
+                return;
             }
-        }
 
-        // Если изменилось количество коек
-        if (newBedsCount != currentBedsCount) {
-            // Получаем текущее количество коек
-            QSqlQuery countQuery(database->getDatabase());
-            countQuery.prepare("SELECT COUNT(*) FROM beds WHERE room_id = ?");
-            countQuery.addBindValue(roomId);
+            // 2. Обновляем цену коек (если нужно)
+            if (updateAllBeds) {
+                QSqlQuery priceUpdateQuery(database->getDatabase());
+                priceUpdateQuery.prepare("UPDATE beds SET price_per_day = ? WHERE room_id = ? AND is_active = 1");
+                priceUpdateQuery.addBindValue(newPrice);
+                priceUpdateQuery.addBindValue(roomId);
 
-            if (countQuery.exec() && countQuery.next()) {
-                int currentBedsInDb = countQuery.value(0).toInt();
+                if (!priceUpdateQuery.exec()) {
+                    qDebug() << "Не удалось обновить цены коек:" << priceUpdateQuery.lastError().text();
+                    // Не прерываем выполнение - это не критическая ошибка
+                }
+            }
 
-                if (newBedsCount > currentBedsInDb) {
-                    // Добавляем недостающие койки
-                    for (int i = currentBedsInDb + 1; i <= newBedsCount; ++i) {
+            // 3. Обрабатываем изменение количества коек
+            if (newBedsCount != currentBedsCount) {
+                // Получаем максимальный номер активной койки
+                QSqlQuery maxBedQuery(database->getDatabase());
+                maxBedQuery.prepare("SELECT MAX(bed_number) FROM beds WHERE room_id = ? AND is_active = 1");
+                maxBedQuery.addBindValue(roomId);
+
+                int maxActiveBedNumber = 0;
+                if (maxBedQuery.exec() && maxBedQuery.next()) {
+                    maxActiveBedNumber = maxBedQuery.value(0).toInt();
+                }
+
+                // Если нужно больше коек - добавляем
+                if (newBedsCount > maxActiveBedNumber) {
+                    int bedsToAdd = newBedsCount - maxActiveBedNumber;
+                    qDebug() << "Нужно добавить" << bedsToAdd << "койки";
+
+                    for (int i = 1; i <= bedsToAdd; ++i) {
                         QSqlQuery addBedQuery(database->getDatabase());
-                        addBedQuery.prepare("INSERT INTO beds (room_id, bed_number, price_per_day) VALUES (?, ?, ?)");
+                        addBedQuery.prepare(
+                            "INSERT INTO beds (room_id, bed_number, price_per_day, is_active) "
+                            "VALUES (?, ?, ?, 1)");
                         addBedQuery.addBindValue(roomId);
-                        addBedQuery.addBindValue(i);
+                        addBedQuery.addBindValue(maxActiveBedNumber + i);
                         addBedQuery.addBindValue(newPrice);
-                        addBedQuery.exec();
-                    }
-                } else if (newBedsCount < currentBedsInDb) {
-                    // Удаляем лишние койки (только если они не заняты)
-                    QMessageBox::StandardButton reply = QMessageBox::question(this, "Удаление коек",
-                        QString("Вы хотите уменьшить количество коек с %1 до %2.\n"
-                               "Койки с номерами больше %2 будут удалены.\n\n"
-                               "Продолжить?")
-                            .arg(currentBedsInDb).arg(newBedsCount),
-                        QMessageBox::Yes | QMessageBox::No);
 
-                    if (reply == QMessageBox::Yes) {
-                        QSqlQuery deleteQuery(database->getDatabase());
-                        deleteQuery.prepare("DELETE FROM beds WHERE room_id = ? AND bed_number > ?");
-                        deleteQuery.addBindValue(roomId);
-                        deleteQuery.addBindValue(newBedsCount);
-                        deleteQuery.exec();
+                        if (!addBedQuery.exec()) {
+                            qDebug() << "Ошибка при добавлении койки" << i << ":" << addBedQuery.lastError().text();
+                        }
+                    }
+                }
+                // Если нужно меньше коек - помечаем как неактивные
+                else if (newBedsCount < maxActiveBedNumber) {
+                    // Проверяем, есть ли активные бронирования на койках, которые будут деактивированы
+                    QSqlQuery checkBookingsQuery(database->getDatabase());
+                    checkBookingsQuery.prepare(
+                        "SELECT COUNT(*) FROM bookings bk "
+                        "JOIN beds b ON bk.bed_id = b.id "
+                        "WHERE b.room_id = ? "
+                        "AND b.bed_number > ? "
+                        "AND b.is_active = 1 "
+                        "AND bk.status = 'active'"
+                    );
+                    checkBookingsQuery.addBindValue(roomId);
+                    checkBookingsQuery.addBindValue(newBedsCount);
+
+                    int activeBookingsOnRemovedBeds = 0;
+                    if (checkBookingsQuery.exec() && checkBookingsQuery.next()) {
+                        activeBookingsOnRemovedBeds = checkBookingsQuery.value(0).toInt();
+                    }
+
+                    if (activeBookingsOnRemovedBeds > 0) {
+                        QSqlDatabase::database().rollback();
+                        QMessageBox::warning(this, "Ошибка",
+                            QString("Нельзя уменьшить количество коек до %1!\n\n"
+                                   "На койках с номерами больше %1 есть %2 активных бронирований.\n"
+                                   "Сначала отмените или завершите эти бронирования.")
+                                .arg(newBedsCount)
+                                .arg(activeBookingsOnRemovedBeds));
+                        return;
+                    }
+
+                    // Помечаем лишние койки как неактивные
+                    QSqlQuery deactivateQuery(database->getDatabase());
+                    deactivateQuery.prepare("UPDATE beds SET is_active = 0 WHERE room_id = ? AND bed_number > ?");
+                    deactivateQuery.addBindValue(roomId);
+                    deactivateQuery.addBindValue(newBedsCount);
+
+                    if (!deactivateQuery.exec()) {
+                        qDebug() << "Ошибка при деактивации коек:" << deactivateQuery.lastError().text();
                     }
                 }
             }
-        }
 
-        QMessageBox::information(this, "Успех", "Данные комнаты обновлены!");
-        updateRoomIdMap();
-        loadCategories();
-        initializeTable();
+            // Фиксируем транзакцию
+            if (QSqlDatabase::database().commit()) {
+                QMessageBox::information(this, "Успех",
+                    QString("Данные комнаты обновлены!\n\n"
+                           "• Категория: %1\n"
+                           "• Количество коек: %2\n"
+                           "• Цена за день: %3 руб.")
+                        .arg(newCategory)
+                        .arg(newBedsCount)
+                        .arg(newPrice, 0, 'f', 2));
+
+                // Обновляем данные в приложении
+                updateRoomIdMap();
+                loadCategories();
+                initializeTable();
+
+            } else {
+                QMessageBox::warning(this, "Ошибка", "Не удалось завершить операцию");
+            }
+
+        } catch (const std::exception& e) {
+            QSqlDatabase::database().rollback();
+            QMessageBox::warning(this, "Ошибка",
+                QString("Ошибка при обновлении комнаты:\n%1").arg(e.what()));
+        }
     }
 }
 
