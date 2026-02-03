@@ -2191,20 +2191,22 @@ void HostelManager::onTableDoubleClicked(const QModelIndex &index)
     // Получаем номер комнаты и койки
     QTableWidgetItem *roomItem = ui->tableWidget->item(row, 0);
     QTableWidgetItem *bedItem = ui->tableWidget->item(row, 1);
+    QTableWidgetItem *categoryItem = ui->tableWidget->item(row, 2);
 
-    if (!roomItem || !bedItem) {
+    if (!roomItem || !bedItem || !categoryItem) {
         return;
     }
 
     QString roomNumber = roomItem->text();
     QString bedNumberStr = bedItem->text();
     int bedNumber = bedNumberStr.toInt();
+    QString category = categoryItem->text();
 
     // Вычисляем дату для выбранного столбца
     int dayIndex = col - 3;
     QDate selectedDate = currentStartDate.addDays(dayIndex);
 
-    // Проверяем занятость через базу данных (самый надежный способ)
+    // Проверяем занятость через базу данных
     if (!database->isDatabaseConnected()) {
         QMessageBox::warning(this, "Ошибка", "База данных не подключена");
         return;
@@ -2213,50 +2215,11 @@ void HostelManager::onTableDoubleClicked(const QModelIndex &index)
     QVariantMap bookingInfo = database->getBookingInfoByDate(roomNumber, bedNumber, selectedDate);
 
     if (bookingInfo.isEmpty()) {
-        QMessageBox::information(this, "Информация",
-            "Эта ячейка свободна. Для бронирования используйте меню 'Бронирование'.");
-        return;
-    }
-
-    // Если мы здесь, значит ячейка занята
-    int bookingId = bookingInfo["booking_id"].toInt();
-    double totalPrice = bookingInfo["total_price"].toDouble();
-    double paidAmount = bookingInfo["paid_amount"].toDouble();
-    QString paymentMethod = bookingInfo["payment_method"].toString();
-    QString clientName = bookingInfo["client_name"].toString();
-//    QDate checkInDate = QDate::fromString(bookingInfo["check_in_date"].toString(), "yyyy-MM-dd");
-//    QDate checkOutDate = QDate::fromString(bookingInfo["check_out_date"].toString(), "yyyy-MM-dd");
-
-    // Показываем диалог редактирования оплаты
-    EditPaymentDialog dialog(this);
-    dialog.setBookingInfo(roomNumber, bedNumber, selectedDate, clientName,
-                         totalPrice, paidAmount, paymentMethod);
-
-    if (dialog.exec() == QDialog::Accepted) {
-        double newPaidAmount = dialog.paidAmount();
-        QString newPaymentMethod = dialog.paymentMethod();
-        QString notes = dialog.notes();
-
-        // Обновляем оплату в базе данных
-        if (database->updatePayment(bookingId, newPaidAmount, newPaymentMethod)) {
-            QMessageBox::information(this, "Успех",
-                QString("Оплата успешно обновлена!\n"
-                       "Новая сумма: %1 руб.\n"
-                       "Способ оплаты: %2")
-                    .arg(newPaidAmount, 0, 'f', 2)
-                    .arg(newPaymentMethod));
-
-            // Обновляем таблицу
-            updateTableColors();
-
-            // Логируем изменение
-            if (!notes.isEmpty()) {
-                qDebug() << "Примечание к оплате:" << notes;
-            }
-        } else {
-            QMessageBox::warning(this, "Ошибка",
-                "Не удалось обновить оплату. Проверьте подключение к базе данных.");
-        }
+        // Ячейка свободна - открываем окно бронирования
+        openBookingDialogForCell(roomNumber, bedNumber, selectedDate);
+    } else {
+        // Если мы здесь, значит ячейка занята - показываем диалог редактирования оплаты
+        showEditPaymentDialog(bookingInfo, roomNumber, bedNumber, selectedDate);
     }
 }
 
@@ -2452,5 +2415,138 @@ void HostelManager::deleteBooking()
             QMessageBox::warning(this, "Ошибка",
                 "Не удалось удалить бронирование. Проверьте подключение к базе данных.");
         }
+    }
+}
+
+void HostelManager::openBookingDialogForCell(const QString &roomNumber,
+                                            int bedNumber,
+                                            const QDate &startDate)
+{
+    if (!database || !database->isDatabaseConnected()) {
+        QMessageBox::warning(this, "Ошибка", "База данных не подключена");
+        return;
+    }
+
+    // Получаем ID комнаты и койки
+    int roomId = roomIdMap.value(roomNumber, -1);
+    if (roomId <= 0) {
+        qDebug() << "Не найден ID комнаты для:" << roomNumber;
+        QMessageBox::warning(this, "Ошибка", "Не удалось определить комнату");
+        return;
+    }
+
+    int bedId = -1;
+    QSqlQuery query(database->getDatabase());
+    query.prepare("SELECT b.id FROM beds b "
+                  "JOIN rooms r ON b.room_id = r.id "
+                  "WHERE r.room_number = ? AND b.bed_number = ? AND b.is_active = 1");
+    query.addBindValue(roomNumber);
+    query.addBindValue(bedNumber);
+
+    if (query.exec() && query.next()) {
+        bedId = query.value(0).toInt();
+    } else {
+        qDebug() << "Не найден ID койки для:" << roomNumber << bedNumber;
+        QMessageBox::warning(this, "Ошибка", "Не удалось определить койку");
+        return;
+    }
+
+    // Создаем диалог бронирования
+    AddBookingDialog *bookingDialog = new AddBookingDialog(database, this);
+
+    // Устанавливаем даты (заезд - выбранная дата, выезд - следующая дата)
+    bookingDialog->setDates(startDate, startDate.addDays(1));
+
+    // Устанавливаем комнату и койку
+    bookingDialog->setRoomAndBed(roomId, bedId);
+
+    // Показываем диалог
+    if (bookingDialog->exec() == QDialog::Accepted) {
+        // Создаем бронирование
+        if (database->addBooking(bookingDialog->bedId(),
+                                bookingDialog->clientId(),
+                                bookingDialog->checkInDate(),
+                                bookingDialog->checkOutDate(),
+                                bookingDialog->totalPrice(),
+                                bookingDialog->paidAmount(),
+                                bookingDialog->paymentMethod())) {
+            QMessageBox::information(this, "Успех",
+                QString("Бронирование успешно создано!\n"
+                       "Комната: %1, Койка: %2\n"
+                       "Период: %3 - %4\n"
+                       "Общая стоимость: %5 руб.")
+                    .arg(roomNumber)
+                    .arg(bedNumber)
+                    .arg(bookingDialog->checkInDate().toString("dd.MM.yyyy"))
+                    .arg(bookingDialog->checkOutDate().toString("dd.MM.yyyy"))
+                    .arg(bookingDialog->totalPrice(), 0, 'f', 2));
+
+            // Обновляем таблицу
+            updateTableColors();
+        } else {
+            QMessageBox::warning(this, "Ошибка",
+                QString("Не удалось создать бронирование!\n"
+                       "Возможно, койка уже забронирована на эти даты:\n"
+                       "Комната: %1, Койка: %2\n"
+                       "Период: %3 - %4")
+                    .arg(roomNumber)
+                    .arg(bedNumber)
+                    .arg(startDate.toString("dd.MM.yyyy"))
+                    .arg(startDate.addDays(1).toString("dd.MM.yyyy")));
+        }
+    }
+
+    bookingDialog->deleteLater();
+}
+void HostelManager::showEditPaymentDialog(const QVariantMap &bookingInfo,
+                                         const QString &roomNumber,
+                                         int bedNumber,
+                                         const QDate &selectedDate)
+{
+    int bookingId = bookingInfo["booking_id"].toInt();
+    double totalPrice = bookingInfo["total_price"].toDouble();
+    double paidAmount = bookingInfo["paid_amount"].toDouble();
+    QString paymentMethod = bookingInfo["payment_method"].toString();
+    QString clientName = bookingInfo["client_name"].toString();
+
+    // Показываем диалог редактирования оплаты
+    EditPaymentDialog dialog(this);
+    dialog.setBookingInfo(roomNumber, bedNumber, selectedDate, clientName,
+                         totalPrice, paidAmount, paymentMethod);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        double newPaidAmount = dialog.paidAmount();
+        QString newPaymentMethod = dialog.paymentMethod();
+        QString notes = dialog.notes();
+
+        // Обновляем оплату в базе данных
+        if (database->updatePayment(bookingId, newPaidAmount, newPaymentMethod)) {
+            QMessageBox::information(this, "Успех",
+                QString("Оплата успешно обновлена!\n"
+                       "Новая сумма: %1 руб.\n"
+                       "Способ оплаты: %2")
+                    .arg(newPaidAmount, 0, 'f', 2)
+                    .arg(newPaymentMethod));
+
+            // Обновляем таблицу
+            updateTableColors();
+
+            // Логируем изменение
+            if (!notes.isEmpty()) {
+                qDebug() << "Примечание к оплате:" << notes;
+            }
+        } else {
+            QMessageBox::warning(this, "Ошибка",
+                "Не удалось обновить оплату. Проверьте подключение к базе данных.");
+        }
+    }
+}
+
+void AddBookingDialog::setDates(const QDate &checkIn, const QDate &checkOut)
+{
+    if (checkInEdit && checkOutEdit) {
+        checkInEdit->setDate(checkIn);
+        checkOutEdit->setDate(checkOut);
+        validateDates();
     }
 }

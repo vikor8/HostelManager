@@ -37,6 +37,10 @@ public:
     // Проверка доступности койки
     bool isBedAvailable() const;
 
+    //  методы для предварительного заполнения
+    void setRoomAndBed(int roomId, int bedId);
+    void setDates(const QDate &checkIn, const QDate &checkOut);
+
 private slots:
     void loadClients();
     void loadRooms();

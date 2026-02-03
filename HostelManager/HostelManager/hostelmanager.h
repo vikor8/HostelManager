@@ -88,6 +88,16 @@ private:
     QAction *deleteBookingAction; // Действие для удаления бронирования
         int selectedBookingIdForDeletion; // ID бронирования для удаления
         QPoint contextMenuPos; // Позиция для контекстного меню
+
+    // Новые методы для обработки двойного клика
+        void openBookingDialogForCell(const QString &roomNumber,
+                                     int bedNumber,
+                                     const QDate &startDate);
+
+    void showEditPaymentDialog(const QVariantMap &bookingInfo,
+                                     const QString &roomNumber,
+                                     int bedNumber,
+                                     const QDate &selectedDate);
 };
 
 #endif // HOSTELMANAGER_H

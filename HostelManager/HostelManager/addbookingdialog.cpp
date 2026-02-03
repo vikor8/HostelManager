@@ -552,3 +552,23 @@ bool AddBookingDialog::isBedAvailable() const
 
     return true;
 }
+
+void AddBookingDialog::setRoomAndBed(int roomId, int bedId)
+{
+    // Находим комнату в комбобоксе
+    int roomIndex = roomCombo->findData(roomId);
+    if (roomIndex >= 0) {
+        roomCombo->setCurrentIndex(roomIndex);
+        loadBeds(); // Загружаем койки для этой комнаты
+
+        // Даем время для загрузки коек
+        QTimer::singleShot(100, [this, bedId]() {
+            // Находим койку в комбобоксе
+            int bedIndex = bedCombo->findData(bedId);
+            if (bedIndex >= 0) {
+                bedCombo->setCurrentIndex(bedIndex);
+                updatePriceFromDatabase();
+            }
+        });
+    }
+}
