@@ -824,7 +824,7 @@ void AddBookingDialog::onAddClientButtonClicked()
             }
 
             // Показываем информационное сообщение
-            QMessageBox::information(this, "Успех", message);
+//            QMessageBox::information(this, "Успех", message);
 
             // Если клиент выбран, показываем подсказку
             if (clientSelected) {

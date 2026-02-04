@@ -1449,6 +1449,9 @@ release/addbookingdialog.o: ../HostelManager/HostelManager/addbookingdialog.cpp 
 		C:/Qt/6.4.2/mingw_64/include/QtCore/QMap \
 		C:/Qt/6.4.2/mingw_64/include/QtCore/QVariant \
 		C:/Qt/6.4.2/mingw_64/include/QtCore/QString \
+		../HostelManager/HostelManager/addclientdialog.h \
+		C:/Qt/6.4.2/mingw_64/include/QtGui/QRegularExpressionValidator \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/QRegularExpression \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QPushButton \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qpushbutton.h \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QMessageBox \
@@ -1460,7 +1463,33 @@ release/addbookingdialog.o: ../HostelManager/HostelManager/addbookingdialog.cpp 
 		C:/Qt/6.4.2/mingw_64/include/QtCore/qbasictimer.h \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QGroupBox \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qgroupbox.h \
-		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QHBoxLayout
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QHBoxLayout \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QVBoxLayout \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QApplication \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qapplication.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qcoreapplication.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qeventloop.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qcoreapplication_platform.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qjnitypes.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qfuture.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qfutureinterface.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qmutex.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qtsan_impl.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qresultstore.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qfuture_impl.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qthreadpool.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qthread.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qdeadlinetimer.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qelapsedtimer.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qrunnable.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qexception.h \
+		C:/Qt/6.4.2/mingw_64/include/QtCore/qpromise.h \
+		C:/Qt/6.4.2/mingw_64/include/QtGui/qguiapplication.h \
+		C:/Qt/6.4.2/mingw_64/include/QtGui/qinputmethod.h \
+		C:/Qt/6.4.2/mingw_64/include/QtGui/qguiapplication_platform.h \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QStyle \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QToolTip \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qtooltip.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o release\addbookingdialog.o ..\HostelManager\HostelManager\addbookingdialog.cpp
 
 release/addclientdialog.o: ../HostelManager/HostelManager/addclientdialog.cpp ../HostelManager/HostelManager/addclientdialog.h \
@@ -1849,7 +1878,9 @@ release/cancelbookingdialog.o: ../HostelManager/HostelManager/cancelbookingdialo
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qlabel.h \
 		C:/Qt/6.4.2/mingw_64/include/QtGui/qpicture.h \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QMessageBox \
-		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qmessagebox.h
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qmessagebox.h \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QGroupBox \
+		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qgroupbox.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o release\cancelbookingdialog.o ..\HostelManager\HostelManager\cancelbookingdialog.cpp
 
 release/database.o: ../HostelManager/HostelManager/database.cpp ../HostelManager/HostelManager/database.h \
@@ -2485,8 +2516,9 @@ release/hostelmanager.o: ../HostelManager/HostelManager/hostelmanager.cpp ../Hos
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qdialog.h \
 		C:/Qt/6.4.2/mingw_64/include/QtCore/QMap \
 		C:/Qt/6.4.2/mingw_64/include/QtGui/QColor \
-		ui_hostelmanager.h \
+		../HostelManager/HostelManager/ui_hostelmanager.h \
 		C:/Qt/6.4.2/mingw_64/include/QtCore/QVariant \
+		C:/Qt/6.4.2/mingw_64/include/QtGui/QIcon \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/QApplication \
 		C:/Qt/6.4.2/mingw_64/include/QtWidgets/qapplication.h \
 		C:/Qt/6.4.2/mingw_64/include/QtCore/qcoreapplication.h \
