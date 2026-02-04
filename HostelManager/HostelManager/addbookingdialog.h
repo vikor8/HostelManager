@@ -51,6 +51,7 @@ private slots:
     void onAccept();
     void validateForm();
     void updatePaidAmount(); // Новый слот для обновления оплаченной суммы
+    void onAddClientButtonClicked();
 
 private:
     Database *database;
@@ -71,6 +72,8 @@ private:
     QRadioButton *transferRadio;
     QButtonGroup *paymentGroup;
 
+    QPushButton *addClientButton;
+
     QMap<int, QString> clientMap; // clientId -> displayName
     QMap<int, QString> roomMap;   // roomId -> roomNumber
     QMap<int, QString> bedMap;    // bedId -> displayName
@@ -79,6 +82,7 @@ private:
     void populateClientCombo(const QString& filter = QString());
     void populateRoomCombo();
     void populateBedCombo(int roomId);
+
 };
 
 #endif // ADDBOOKINGDIALOG_H

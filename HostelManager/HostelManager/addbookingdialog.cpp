@@ -1,5 +1,6 @@
 #include "addbookingdialog.h"
 #include "database.h"
+#include "addclientdialog.h"
 #include <QPushButton>
 #include <QMessageBox>
 #include <QDebug>
@@ -9,6 +10,13 @@
 #include <QTimer>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QLabel>
+#include <QApplication>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
+#include <QStyle>
+
 
 AddBookingDialog::AddBookingDialog(Database *db, QWidget *parent)
     : QDialog(parent)
@@ -53,6 +61,44 @@ void AddBookingDialog::setupUi()
     completer->setCaseSensitivity(Qt::CaseInsensitive);
     clientCombo->setCompleter(completer);
 
+    // Создаем layout для поля клиента с кнопкой "+"
+    QHBoxLayout *clientLayout = new QHBoxLayout();
+    clientLayout->addWidget(clientCombo);
+
+    // Кнопка "+" для добавления нового клиента
+    QPushButton *addClientButton = new QPushButton("+", this);
+    addClientButton->setFixedSize(30, 30);
+    addClientButton->setToolTip("Добавить нового клиента");
+    addClientButton->setStyleSheet(
+        "QPushButton {"
+        "   background-color: #4CAF50;"
+        "   color: white;"
+        "   font-weight: bold;"
+        "   font-size: 16px;"
+        "   border-radius: 4px;"
+        "   border: 1px solid #45a049;"
+        "   min-width: 30px;"
+        "   max-width: 30px;"
+        "   min-height: 30px;"
+        "   max-height: 30px;"
+        "}"
+        "QPushButton:hover {"
+        "   background-color: #45a049;"
+        "   border-color: #3d8b40;"
+        "}"
+        "QPushButton:pressed {"
+        "   background-color: #3d8b40;"
+        "   border-color: #367c39;"
+        "}"
+        "QPushButton:disabled {"
+        "   background-color: #cccccc;"
+        "   border-color: #bbbbbb;"
+        "}"
+    );
+
+    clientLayout->addWidget(addClientButton);
+    clientLayout->setSpacing(5);
+
     // Поля для дат
     checkInEdit = new QDateEdit(this);
     checkInEdit->setDate(QDate::currentDate());
@@ -87,7 +133,7 @@ void AddBookingDialog::setupUi()
     paidSpin->setSuffix(" руб.");
     paidSpin->setDecimals(2);
     paidSpin->setSingleStep(100);
-    paidSpin->setValue(0); // По умолчанию оплачено 0
+    paidSpin->setValue(0);
 
     // Метка для отображения общей стоимости
     totalPriceLabel = new QLabel(this);
@@ -98,7 +144,7 @@ void AddBookingDialog::setupUi()
     balanceLabel->setStyleSheet("font-weight: bold;");
 
     // Добавляем элементы в форму
-    formLayout->addRow("*Клиент:", clientCombo);
+    formLayout->addRow("*Клиент:", clientLayout);
     formLayout->addRow("*Дата заезда:", checkInEdit);
     formLayout->addRow("*Дата выезда:", checkOutEdit);
     formLayout->addRow("*Номер комнаты:", roomCombo);
@@ -162,6 +208,7 @@ void AddBookingDialog::setupUi()
     connect(paidSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &AddBookingDialog::updatePaidAmount);
     connect(buttonBox, &QDialogButtonBox::accepted, this, &AddBookingDialog::onAccept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(addClientButton, &QPushButton::clicked, this, &AddBookingDialog::onAddClientButtonClicked);
 
     // Добавляем соединения для проверки формы
     connect(clientCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -179,6 +226,9 @@ void AddBookingDialog::setupUi()
 
     // Изначально кнопка OK неактивна
     buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
+
+    // Блокируем кнопку добавления клиента, если БД не подключена
+    addClientButton->setEnabled(database && database->isDatabaseConnected());
 
     // Инициализируем отображение остатка
     updatePaidAmount();
@@ -571,4 +621,273 @@ void AddBookingDialog::setRoomAndBed(int roomId, int bedId)
             }
         });
     }
+}
+
+void AddBookingDialog::onAddClientButtonClicked()
+{
+    // Проверяем подключение к базе данных
+    if (!database || !database->isDatabaseConnected()) {
+        QMessageBox::critical(this, "Ошибка подключения",
+            "База данных не подключена!\n\n"
+            "Пожалуйста, подключитесь к базе данных перед добавлением клиента.");
+        return;
+    }
+
+    // Сохраняем текущий текст в поле клиента
+    QString currentClientText = clientCombo->currentText();
+
+    // Создаем диалог добавления клиента
+    AddClientDialog *clientDialog = new AddClientDialog(this, AddClientDialog::Add);
+
+    // Настраиваем диалог
+    clientDialog->setWindowTitle("Добавление клиента для бронирования");
+    clientDialog->setModal(true);
+
+    // Показываем диалог и получаем результат
+    int dialogResult = clientDialog->exec();
+
+    if (dialogResult == QDialog::Accepted) {
+        // Получаем данные из диалога
+        QString lastName = clientDialog->lastName().trimmed();
+        QString firstName = clientDialog->firstName().trimmed();
+        QString middleName = clientDialog->middleName().trimmed();
+        QString passport = clientDialog->passport().trimmed();
+        QString phone = clientDialog->phone().trimmed();
+        QDate birthDate = clientDialog->birthDate();
+        QString country = clientDialog->country().trimmed();
+
+        // Дополнительная валидация (на всякий случай)
+        if (lastName.isEmpty() || firstName.isEmpty()) {
+            QMessageBox::warning(this, "Ошибка валидации",
+                "Фамилия и имя клиента являются обязательными полями.");
+            clientDialog->deleteLater();
+            return;
+        }
+
+        if (passport.isEmpty()) {
+            QMessageBox::warning(this, "Ошибка валидации",
+                "Номер паспорта является обязательным полем.");
+            clientDialog->deleteLater();
+            return;
+        }
+
+        if (phone.isEmpty()) {
+            QMessageBox::warning(this, "Ошибка валидации",
+                "Номер телефона является обязательным полем.");
+            clientDialog->deleteLater();
+            return;
+        }
+
+        // Проверяем формат телефона
+        QString cleanPhone = phone;
+        cleanPhone.remove(QRegularExpression("[^0-9+]"));
+        if (cleanPhone.length() < 10) {
+            QMessageBox::warning(this, "Ошибка валидации",
+                "Номер телефона должен содержать не менее 10 цифр.");
+            clientDialog->deleteLater();
+            return;
+        }
+
+        // Проверяем возраст клиента (должен быть не младше 18 лет)
+        if (birthDate.isValid()) {
+            int age = birthDate.daysTo(QDate::currentDate()) / 365;
+            if (age < 18) {
+                QMessageBox::StandardButton reply = QMessageBox::question(this, "Подтверждение",
+                    QString("Клиенту всего %1 лет.\n"
+                           "Вы уверены, что хотите добавить несовершеннолетнего клиента?")
+                        .arg(age),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::No);
+
+                if (reply == QMessageBox::No) {
+                    clientDialog->deleteLater();
+                    return;
+                }
+            }
+        }
+
+        // Проверяем, не существует ли уже клиент с таким паспортом
+        if (database->clientExists(passport)) {
+            // Пытаемся найти существующего клиента
+            QSqlQuery query(database->getDatabase());
+            query.prepare("SELECT id, last_name, first_name, middle_name FROM clients WHERE passport_number = ?");
+            query.addBindValue(passport);
+
+            if (query.exec() && query.next()) {
+                int existingId = query.value(0).toInt();
+                QString existingLastName = query.value(1).toString();
+                QString existingFirstName = query.value(2).toString();
+                QString existingMiddleName = query.value(3).toString();
+
+                QString existingFullName = existingLastName + " " + existingFirstName;
+                if (!existingMiddleName.isEmpty()) {
+                    existingFullName += " " + existingMiddleName;
+                }
+
+                QString newFullName = lastName + " " + firstName;
+                if (!middleName.isEmpty()) {
+                    newFullName += " " + middleName;
+                }
+
+                QMessageBox::StandardButton reply = QMessageBox::question(this, "Клиент уже существует",
+                    QString("Клиент с таким номером паспорта уже существует в базе данных!\n\n"
+                           "Существующий клиент: %1\n"
+                           "Новый клиент: %2\n\n"
+                           "Хотите выбрать существующего клиента?")
+                        .arg(existingFullName)
+                        .arg(newFullName),
+                    QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+                    QMessageBox::Yes);
+
+                if (reply == QMessageBox::Yes) {
+                    // Обновляем список клиентов и выбираем существующего
+                    loadClients();
+                    int index = clientCombo->findData(existingId);
+                    if (index >= 0) {
+                        clientCombo->setCurrentIndex(index);
+                    }
+                    clientDialog->deleteLater();
+                    return;
+                } else if (reply == QMessageBox::Cancel) {
+                    clientDialog->deleteLater();
+                    return;
+                }
+                // Если No - продолжаем (перезапишем клиента)
+            }
+        }
+
+        // Показываем прогресс
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+
+        // Добавляем клиента в базу данных
+        bool success = false;
+
+        // Проверяем, нужно ли обновлять существующего клиента или добавлять нового
+        if (database->clientExists(passport)) {
+            // Обновляем существующего клиента
+            QMessageBox::StandardButton updateReply = QMessageBox::question(this, "Обновление данных",
+                "Клиент с таким паспортом уже существует.\n"
+                "Хотите обновить данные клиента?",
+                QMessageBox::Yes | QMessageBox::No,
+                QMessageBox::Yes);
+
+            if (updateReply == QMessageBox::Yes) {
+                // Получаем ID существующего клиента
+                QSqlQuery idQuery(database->getDatabase());
+                idQuery.prepare("SELECT id FROM clients WHERE passport_number = ?");
+                idQuery.addBindValue(passport);
+
+                if (idQuery.exec() && idQuery.next()) {
+                    int clientId = idQuery.value(0).toInt();
+                    success = database->updateClient(clientId, firstName, lastName, middleName,
+                                                    passport, phone, birthDate, country);
+
+                    if (success) {
+                        // Обновляем список и выбираем обновленного клиента
+                        loadClients();
+                        int index = clientCombo->findData(clientId);
+                        if (index >= 0) {
+                            clientCombo->setCurrentIndex(index);
+                        }
+                    }
+                }
+            } else {
+                QApplication::restoreOverrideCursor();
+                clientDialog->deleteLater();
+                return;
+            }
+        } else {
+            // Добавляем нового клиента
+            success = database->addClient(firstName, lastName, middleName,
+                                         passport, phone, birthDate, country);
+        }
+
+        QApplication::restoreOverrideCursor();
+
+        if (success) {
+            if (!database->clientExists(passport)) {
+                // Если клиент был добавлен как новый
+                // Получаем ID нового клиента
+                QSqlQuery query(database->getDatabase());
+                query.prepare("SELECT id FROM clients WHERE passport_number = ?");
+                query.addBindValue(passport);
+
+                int newClientId = -1;
+                if (query.exec() && query.next()) {
+                    newClientId = query.value(0).toInt();
+                }
+
+                // Обновляем список клиентов
+                loadClients();
+
+                // Пытаемся найти и выбрать нового клиента
+                if (newClientId > 0) {
+                    int index = clientCombo->findData(newClientId);
+                    if (index >= 0) {
+                        clientCombo->setCurrentIndex(index);
+                    } else {
+                        // Если не нашли по ID, ищем по имени
+                        QString searchName = lastName + " " + firstName;
+                        index = clientCombo->findText(searchName, Qt::MatchContains);
+                        if (index >= 0) {
+                            clientCombo->setCurrentIndex(index);
+                        }
+                    }
+                }
+            }
+
+            // Формируем сообщение об успехе
+            QString fullName = lastName + " " + firstName;
+            if (!middleName.isEmpty()) {
+                fullName += " " + middleName;
+            }
+
+            QString message = QString("Клиент успешно %1!\n\n"
+                                     "ФИО: %2\n"
+                                     "Паспорт: %3\n"
+                                     "Телефон: %4")
+                .arg(database->clientExists(passport) ? "обновлен" : "добавлен")
+                .arg(fullName)
+                .arg(passport)
+                .arg(phone);
+
+            if (country.isEmpty()) {
+                message += "\nСтрана: не указана";
+            } else {
+                message += "\nСтрана: " + country;
+            }
+
+            if (birthDate.isValid()) {
+                int age = birthDate.daysTo(QDate::currentDate()) / 365;
+                message += QString("\nДата рождения: %1 (%2 лет)")
+                    .arg(birthDate.toString("dd.MM.yyyy"))
+                    .arg(age);
+            }
+
+            QMessageBox::information(this, "Успех", message);
+
+            // Устанавливаем фокус обратно на поле клиента
+            clientCombo->setFocus();
+            clientCombo->showPopup(); // Показываем список клиентов
+
+        } else {
+            QMessageBox::critical(this, "Ошибка",
+                "Не удалось сохранить данные клиента.\n"
+                "Проверьте подключение к базе данных и повторите попытку.");
+
+            // Восстанавливаем предыдущий текст
+            if (!currentClientText.isEmpty()) {
+                clientCombo->setCurrentText(currentClientText);
+            }
+        }
+    } else {
+        // Пользователь отменил добавление клиента
+        // Восстанавливаем предыдущий текст
+        if (!currentClientText.isEmpty()) {
+            clientCombo->setCurrentText(currentClientText);
+        }
+    }
+
+    // Удаляем диалог
+    clientDialog->deleteLater();
 }
