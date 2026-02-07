@@ -6,6 +6,7 @@ debug/editpaymentdialog.o
 debug/main.o
 debug/hostelmanager.o
 debug/reportwindow.o
+debug/qrc_resources.o
 debug/moc_addbookingdialog.o
 debug/moc_addclientdialog.o
 debug/moc_cancelbookingdialog.o

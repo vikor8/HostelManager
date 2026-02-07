@@ -33,7 +33,7 @@ IDC           = idc
 IDL           = midl
 ZIP           = zip -r -9
 DEF_FILE      = 
-RES_FILE      = 
+RES_FILE      = HostelManager_resource_res.o
 SED           = $(QMAKE) -install sed
 MOVE          = move
 SUBTARGETS    =  \
@@ -228,7 +228,8 @@ Makefile: ../HostelManager/HostelManager/HostelManager.pro C:/Qt/6.4.2/mingw_64/
 		C:/Qt/6.4.2/mingw_64/lib/Qt6Sql.prl \
 		C:/Qt/6.4.2/mingw_64/lib/Qt6Core.prl \
 		C:/Qt/6.4.2/mingw_64/lib/Qt6EntryPoint.prl \
-		C:/Qt/6.4.2/mingw_64/mkspecs/features/build_pass.prf
+		C:/Qt/6.4.2/mingw_64/mkspecs/features/build_pass.prf \
+		../HostelManager/HostelManager/resources.qrc
 	$(QMAKE) -o Makefile ..\HostelManager\HostelManager\HostelManager.pro -spec win32-g++ "CONFIG+=debug" "CONFIG+=qml_debug"
 C:/Qt/6.4.2/mingw_64/mkspecs/features/spec_pre.prf:
 C:/Qt/6.4.2/mingw_64/mkspecs/features/device_config.prf:
@@ -389,6 +390,7 @@ C:/Qt/6.4.2/mingw_64/lib/Qt6Sql.prl:
 C:/Qt/6.4.2/mingw_64/lib/Qt6Core.prl:
 C:/Qt/6.4.2/mingw_64/lib/Qt6EntryPoint.prl:
 C:/Qt/6.4.2/mingw_64/mkspecs/features/build_pass.prf:
+../HostelManager/HostelManager/resources.qrc:
 qmake: FORCE
 	@$(QMAKE) -o Makefile ..\HostelManager\HostelManager\HostelManager.pro -spec win32-g++ "CONFIG+=debug" "CONFIG+=qml_debug"
 

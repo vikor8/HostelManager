@@ -33,8 +33,10 @@ AddBookingDialog::AddBookingDialog(Database *db, QWidget *parent)
     }
 
     // Устанавливаем даты по умолчанию
-    checkInEdit->setDate(QDate::currentDate());
-    checkOutEdit->setDate(QDate::currentDate().addDays(1));
+//    checkInEdit->setMinimumDate(QDate(1900, 1, 1)); // Или QDate()
+//    checkOutEdit->setMinimumDate(QDate(1900, 1, 1)); // Или QDate()
+    checkInEdit->setCalendarPopup(true);
+    checkInEdit->setDisplayFormat("dd.MM.yyyy");
 
     calculateTotalPrice();
     validateForm();

@@ -1627,6 +1627,19 @@ void HostelManager::on_dateEdit_dateChanged(const QDate &date)
     currentStartDate = date;
     updateTableHeaders();
     updateTableColors();
+    qDebug() << "Дата изменена на:" << date.toString("dd.MM.yyyy");
+       qDebug() << "Начальная дата для таблицы:" << date.toString("dd.MM.yyyy");
+       qDebug() << "Конечная дата для таблицы:" << date.addDays(DAYS_COUNT - 1).toString("dd.MM.yyyy");
+
+       currentStartDate = date;
+       // Если таблица пуста - переинициализируем ее
+          if (ui->tableWidget->rowCount() == 0) {
+              qDebug() << "Таблица пуста, инициализируем заново...";
+              initializeTable();
+          } else {
+              updateTableHeaders();
+              updateTableColors();
+          }
 }
 
 void HostelManager::initializeTable()
@@ -1794,7 +1807,7 @@ void HostelManager::updateTableHeaders()
         QStringList headers;
         headers << "Номер комнаты" << "Номер койки" << "Категория";
 
-        // Добавляем заголовки для дней
+        // Добавляем заголовки для дней (фиксированное количество DAYS_COUNT)
         for (int day = 0; day < DAYS_COUNT; ++day) {
             QDate currentDate = currentStartDate.addDays(day);
             QString englishMonth = currentDate.toString("MMM");

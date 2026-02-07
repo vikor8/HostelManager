@@ -6,6 +6,7 @@ release/editpaymentdialog.o
 release/main.o
 release/hostelmanager.o
 release/reportwindow.o
+release/qrc_resources.o
 release/moc_addbookingdialog.o
 release/moc_addclientdialog.o
 release/moc_cancelbookingdialog.o
