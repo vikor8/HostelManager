@@ -468,44 +468,49 @@ void ReportWindow::printReport()
 
 void ReportWindow::exportToExcel()
 {
-    QString fileName = QFileDialog::getSaveFileName(this,
-        "Экспорт в Excel",
-        "Отчет_" + QDate::currentDate().toString("yyyy-MM-dd") + ".csv",
-        "CSV файлы (*.csv);;Все файлы (*)");
+    // Заглушка "В разработке"
+       QMessageBox::information(this,
+           "Экспорт в Excel",
+           "Функция экспорта в Excel находится в разработке.\n\n"
+           "Ждем информацию от заазчика, какие данные нужно экспортировать.");
+//    QString fileName = QFileDialog::getSaveFileName(this,
+//        "Экспорт в Excel",
+//        "Отчет_" + QDate::currentDate().toString("yyyy-MM-dd") + ".csv",
+//        "CSV файлы (*.csv);;Все файлы (*)");
 
-    if (fileName.isEmpty()) {
-        return;
-    }
+//    if (fileName.isEmpty()) {
+//        return;
+//    }
 
-    QFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось создать файл");
-        return;
-    }
+//    QFile file(fileName);
+//    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+//        QMessageBox::warning(this, "Ошибка", "Не удалось создать файл");
+//        return;
+//    }
 
-    QTextStream out(&file);
-    out.setEncoding(QStringConverter::Utf8);
+//    QTextStream out(&file);
+//    out.setEncoding(QStringConverter::Utf8);
 
-    // Записываем заголовки
-    for (int col = 0; col < reportTable->columnCount(); ++col) {
-        if (col > 0) out << ";";
-        out << "\"" << reportTable->horizontalHeaderItem(col)->text() << "\"";
-    }
-    out << "\n";
+//    // Записываем заголовки
+//    for (int col = 0; col < reportTable->columnCount(); ++col) {
+//        if (col > 0) out << ";";
+//        out << "\"" << reportTable->horizontalHeaderItem(col)->text() << "\"";
+//    }
+//    out << "\n";
 
-    // Записываем данные
-    for (int row = 0; row < reportTable->rowCount(); ++row) {
-        for (int col = 0; col < reportTable->columnCount(); ++col) {
-            if (col > 0) out << ";";
-            QString text = reportTable->item(row, col) ?
-                          reportTable->item(row, col)->text() : "";
-            out << "\"" << text << "\"";
-        }
-        out << "\n";
-    }
+//    // Записываем данные
+//    for (int row = 0; row < reportTable->rowCount(); ++row) {
+//        for (int col = 0; col < reportTable->columnCount(); ++col) {
+//            if (col > 0) out << ";";
+//            QString text = reportTable->item(row, col) ?
+//                          reportTable->item(row, col)->text() : "";
+//            out << "\"" << text << "\"";
+//        }
+//        out << "\n";
+//    }
 
-    file.close();
+//    file.close();
 
-    QMessageBox::information(this, "Экспорт",
-        QString("Данные успешно экспортированы в файл:\n%1").arg(fileName));
+//    QMessageBox::information(this, "Экспорт",
+//        QString("Данные успешно экспортированы в файл:\n%1").arg(fileName));
 }
