@@ -85,7 +85,9 @@ public:
 
     QList<QVariantMap> getPaymentReport(const QDate& startDate, const QDate& endDate);
 
-
+    bool addRoomBooking(int roomId, int clientId, const QDate& checkInDate,
+                       const QDate& checkOutDate, double totalPrice,
+                       double paidAmount = 0, const QString& paymentMethod = "Наличные");
 
 
 private:

@@ -10,8 +10,8 @@
 #include <QMessageBox>
 #include <QSqlQuery>
 #include <QSqlError>
-#include <QGroupBox>  // Добавлен недостающий заголовочный файл
-#include <QDebug>     // Добавлен для qDebug()
+#include <QGroupBox>
+#include <QDebug>
 
 CancelBookingDialog::CancelBookingDialog(Database *db, QWidget *parent)
     : QDialog(parent)

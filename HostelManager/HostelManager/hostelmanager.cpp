@@ -1857,35 +1857,58 @@ void HostelManager::updateTableColors()
 
         // Цвета для статусов
         QColor fullyPaidColor(144, 238, 144);    // Светло-зеленый - полностью оплачено
-        QColor partiallyPaidColor(200, 200, 0); // Светло-желтый - частично оплачено
-        QColor notPaidColor(255, 200, 150);       // Светло-оранжевый - не оплачено
-        QColor weekendColor(220, 220, 255);       // Светло-синий для выходных
+        QColor partiallyPaidColor(255, 255, 150); // Светло-желтый - частично оплачено
+        QColor notPaidColor(255, 200, 200);       // Светло-красный - не оплачено
+        QColor roomBookingColor(200, 230, 255);   // Светло-голубой - бронирование комнаты целиком
+        QColor weekendColor(240, 240, 255);       // Светло-синий для выходных
 
         // Получаем данные о бронированиях из базы данных
         QMap<QString, QSet<QDate>> occupiedDates; // Ключ: "комната_койка", значение: набор занятых дат
         QMap<QString, QMap<QDate, QVariantMap>> paymentInfo; // Ключ: "комната_койка", значение: map<дата, информация_об_оплате>
+        QMap<QString, int> roomBookingGroups; // Ключ: "комната_койка_дата", значение: group_id
 
         if (database->isDatabaseConnected()) {
             QSqlQuery query(database->getDatabase());
-            query.prepare("SELECT r.room_number, b.bed_number, bk.check_in_date, bk.check_out_date, "
-                         "bk.total_price, bk.paid_amount "
-                         "FROM bookings bk "
-                         "JOIN beds b ON bk.bed_id = b.id "
-                         "JOIN rooms r ON b.room_id = r.id "
-                         "WHERE bk.status = 'active' "
-                         "AND NOT (bk.check_out_date <= :start_date OR bk.check_in_date >= :end_date)");
 
-            query.bindValue(":start_date", currentStartDate.toString("yyyy-MM-dd"));
-            query.bindValue(":end_date", currentStartDate.addDays(DAYS_COUNT - 1).toString("yyyy-MM-dd"));
+            // Обновленный запрос с дополнительными полями
+            query.prepare("SELECT "
+                          "r.room_number, "
+                          "b.bed_number, "
+                          "bk.check_in_date, "
+                          "bk.check_out_date, "
+                          "bk.total_price, "
+                          "bk.paid_amount, "
+                          "bk.payment_method, "
+                          "bk.is_room_booking, "
+                          "bk.room_booking_group, "
+                          "c.first_name || ' ' || c.last_name as client_name, "
+                          "c.last_name || ' ' || c.first_name || ' ' || COALESCE(c.middle_name, '') as client_full_name "
+                          "FROM bookings bk "
+                          "JOIN beds b ON bk.bed_id = b.id "
+                          "JOIN rooms r ON b.room_id = r.id "
+                          "JOIN clients c ON bk.client_id = c.id "
+                          "WHERE bk.status = 'active' "
+                          "AND NOT (bk.check_out_date < :start_date OR bk.check_in_date > :end_date)");
+
+            QString startDateStr = currentStartDate.toString("yyyy-MM-dd");
+            QString endDateStr = currentStartDate.addDays(DAYS_COUNT - 1).toString("yyyy-MM-dd");
+
+            query.bindValue(":start_date", startDateStr);
+            query.bindValue(":end_date", endDateStr);
 
             if (query.exec()) {
                 while (query.next()) {
                     QString roomNumber = query.value(0).toString();
-                    int bedNumber = query.value(1).toInt(); // Получаем int
+                    int bedNumber = query.value(1).toInt();
                     QDate checkIn = QDate::fromString(query.value(2).toString(), "yyyy-MM-dd");
                     QDate checkOut = QDate::fromString(query.value(3).toString(), "yyyy-MM-dd");
                     double totalPrice = query.value(4).toDouble();
                     double paidAmount = query.value(5).toDouble();
+                    QString paymentMethod = query.value(6).toString();
+                    bool isRoomBooking = query.value(7).toBool();
+                    int roomBookingGroup = query.value(8).toInt();
+                    QString clientName = query.value(9).toString();
+                    QString clientFullName = query.value(10).toString();
 
                     QString key = roomNumber + "_" + QString::number(bedNumber);
 
@@ -1899,6 +1922,12 @@ void HostelManager::updateTableColors()
                             QVariantMap payment;
                             payment["total_price"] = totalPrice;
                             payment["paid_amount"] = paidAmount;
+                            payment["payment_method"] = paymentMethod;
+                            payment["client_name"] = clientName;
+                            payment["client_full_name"] = clientFullName;
+                            payment["is_room_booking"] = isRoomBooking;
+                            payment["room_booking_group"] = roomBookingGroup;
+
                             if (totalPrice > 0) {
                                 double percentage = (paidAmount / totalPrice) * 100;
                                 payment["paid_percentage"] = qRound(percentage);
@@ -1908,6 +1937,11 @@ void HostelManager::updateTableColors()
                             payment["balance"] = totalPrice - paidAmount;
 
                             paymentInfo[key][date] = payment;
+
+                            if (isRoomBooking) {
+                                QString dateKey = key + "_" + date.toString("yyyy-MM-dd");
+                                roomBookingGroups[dateKey] = roomBookingGroup;
+                            }
                         }
                         date = date.addDays(1);
                     }
@@ -1918,6 +1952,7 @@ void HostelManager::updateTableColors()
             }
         }
 
+        // Проходим по всем строкам таблицы
         for (int row = 0; row < rowCount; ++row) {
             // Проверяем, что строка существует
             if (row >= ui->tableWidget->rowCount()) {
@@ -1935,7 +1970,7 @@ void HostelManager::updateTableColors()
 
             QString roomNumber = roomItem->text();
             QString bedNumberStr = bedItem->text();
-            int bedNumber = bedNumberStr.toInt(); // Конвертируем в int
+            int bedNumber = bedNumberStr.toInt();
             QString key = roomNumber + "_" + bedNumberStr;
 
             // Получаем категорию комнаты
@@ -1954,7 +1989,11 @@ void HostelManager::updateTableColors()
                     item->setBackground(QBrush(cellColor));
 
                     // Настраиваем цвет текста для контраста
-                    item->setForeground(QColor(cellColor.lightness() > 150 ? Qt::black : Qt::white));
+                    if (cellColor.lightness() > 150) {
+                        item->setForeground(QBrush(Qt::black));
+                    } else {
+                        item->setForeground(QBrush(Qt::white));
+                    }
                 }
             }
 
@@ -1970,120 +2009,131 @@ void HostelManager::updateTableColors()
 
                 QDate currentDate = currentStartDate.addDays(day);
                 QTableWidgetItem *item = ui->tableWidget->item(row, col);
-                if (item) {
-                    // Определяем, является ли день выходным
-                    bool isWeekend = (currentDate.dayOfWeek() == 6 || currentDate.dayOfWeek() == 7);
 
-                    // Проверяем, занята ли койка на эту дату
-                    bool isOccupied = occupiedDates.contains(key) &&
-                                     occupiedDates[key].contains(currentDate);
+                if (!item) {
+                    // Создаем элемент, если его нет
+                    item = new QTableWidgetItem("");
+                    item->setTextAlignment(Qt::AlignCenter);
+                    item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+                    ui->tableWidget->setItem(row, col, item);
+                }
 
-                    // Устанавливаем цвет в зависимости от статуса
-                    if (isOccupied) {
-                        // Получаем информацию об оплате
-                        QVariantMap payment;
-                        if (paymentInfo.contains(key) && paymentInfo[key].contains(currentDate)) {
-                            payment = paymentInfo[key][currentDate];
+                // Определяем, является ли день выходным
+                bool isWeekend = (currentDate.dayOfWeek() == 6 || currentDate.dayOfWeek() == 7);
+
+                // Проверяем, занята ли койка на эту дату
+                bool isOccupied = occupiedDates.contains(key) &&
+                                 occupiedDates[key].contains(currentDate);
+
+                // Устанавливаем цвет в зависимости от статуса
+                if (isOccupied) {
+                    // Получаем информацию об оплате
+                    QVariantMap payment;
+                    if (paymentInfo.contains(key) && paymentInfo[key].contains(currentDate)) {
+                        payment = paymentInfo[key][currentDate];
+                    }
+
+                    double totalPrice = payment["total_price"].toDouble();
+                    double paidAmount = payment["paid_amount"].toDouble();
+                    double balance = payment["balance"].toDouble();
+                    int paidPercentage = payment["paid_percentage"].toInt();
+                    bool isRoomBooking = payment["is_room_booking"].toBool();
+
+                    QColor cellColor;
+                    QString statusText;
+                    QString paymentSymbol;
+
+                    if (isRoomBooking) {
+                        // Для бронирования комнаты целиком используем специальный цвет
+                        cellColor = roomBookingColor;
+
+                        if (balance <= 0) {
+                            paymentSymbol = "🏨✓"; // Комната полностью оплачена
+                        } else if (paidAmount > 0) {
+                            paymentSymbol = "🏨" + QString::number(paidPercentage) + "%";
                         } else {
-                            // Если нет информации в кэше, получаем из базы данных
-                            payment = database->getBookingInfo(roomNumber, bedNumber, currentDate);
+                            paymentSymbol = "🏨●"; // Комната не оплачена
                         }
 
-//                        double totalPrice = payment["total_price"].toDouble();
-                        double paidAmount = payment["paid_amount"].toDouble();
-                        double balance = payment["balance"].toDouble();
-                        int paidPercentage = payment["paid_percentage"].toInt();
-
-                        QColor cellColor;
-                        QString statusText;
-
+                        // Определяем текст статуса
+                        if (balance <= 0) {
+                            statusText = paymentSymbol;
+                            item->setForeground(QBrush(Qt::darkBlue));
+                        } else if (paidAmount > 0) {
+                            statusText = paymentSymbol;
+                            item->setForeground(QBrush(Qt::darkYellow));
+                        } else {
+                            statusText = paymentSymbol;
+                            item->setForeground(QBrush(Qt::darkRed));
+                        }
+                    } else {
+                        // Обычное бронирование места
                         if (balance <= 0) {
                             // Полностью оплачено
                             cellColor = fullyPaidColor;
-                            statusText = "✓"; // Галочка для полностью оплаченных
-                            item->setForeground(QColor(Qt::darkGreen));
+                            paymentSymbol = "✓"; // Галочка для полностью оплаченных
+                            item->setForeground(QBrush(Qt::darkGreen));
                         } else if (paidAmount > 0) {
                             // Частично оплачено
                             cellColor = partiallyPaidColor;
-                            statusText = QString("%1%").arg(paidPercentage);
-                            item->setForeground(QColor(Qt::darkYellow));
+                            paymentSymbol = QString::number(paidPercentage) + "%";
+                            item->setForeground(QBrush(Qt::darkYellow));
                         } else {
                             // Не оплачено
                             cellColor = notPaidColor;
-                            statusText = "●"; // Точка для неоплаченных
-                            item->setForeground(QColor(Qt::darkRed));
+                            paymentSymbol = "●"; // Точка для неоплаченных
+                            item->setForeground(QBrush(Qt::darkRed));
                         }
-
-                        // Если выходной, смешиваем с цветом выходных
-                        if (isWeekend) {
-                            cellColor.setRed((cellColor.red() * 0.7 + weekendColor.red() * 0.3));
-                            cellColor.setGreen((cellColor.green() * 0.7 + weekendColor.green() * 0.3));
-                            cellColor.setBlue((cellColor.blue() * 0.7 + weekendColor.blue() * 0.3));
-                        }
-
-                        item->setBackground(QBrush(cellColor));
-                        item->setText(statusText);
-
-                    } else {
-                        // Для свободных: используем цвет категории, для выходных - смешиваем с weekendColor
-                        QColor baseColor = categoryColor.lighter(120);
-                        if (isWeekend) {
-                            // Смешиваем цвет категории с цветом выходных (30% weekendColor)
-                            baseColor.setRed((baseColor.red() * 0.7 + weekendColor.red() * 0.3));
-                            baseColor.setGreen((baseColor.green() * 0.7 + weekendColor.green() * 0.3));
-                            baseColor.setBlue((baseColor.blue() * 0.7 + weekendColor.blue() * 0.3));
-                        }
-                        item->setBackground(QBrush(baseColor));
-                        item->setText(""); // Очищаем текст
-                        item->setForeground(QColor(baseColor.lightness() > 150 ? Qt::black : Qt::white));
+                        statusText = paymentSymbol;
                     }
 
-                    item->setTextAlignment(Qt::AlignCenter);
+                    // Если выходной, смешиваем с цветом выходных
+                    if (isWeekend && !isRoomBooking) {
+                        cellColor = QColor(
+                            (cellColor.red() * 0.7 + weekendColor.red() * 0.3),
+                            (cellColor.green() * 0.7 + weekendColor.green() * 0.3),
+                            (cellColor.blue() * 0.7 + weekendColor.blue() * 0.3)
+                        );
+                    } else if (isWeekend && isRoomBooking) {
+                        // Для бронирований комнат в выходные делаем цвет чуть темнее
+                        cellColor = cellColor.darker(105);
+                    }
 
-                    // Устанавливаем подсказку для ячейки
+                    item->setBackground(QBrush(cellColor));
+                    item->setText(statusText);
+
+                    // Формируем подробную подсказку
                     QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\n")
                         .arg(roomNumber)
                         .arg(bedNumber)
-                        .arg(currentDate.toString("dd.MM.yyyy"));
+                        .arg(currentDate.toString("dd.MM.yyyy - dddd"));
 
-                    if (isOccupied) {
-                        // Получаем информацию об оплате для подсказки
-                        QVariantMap payment;
-                        if (paymentInfo.contains(key) && paymentInfo[key].contains(currentDate)) {
-                            payment = paymentInfo[key][currentDate];
-                        } else {
-                            payment = database->getBookingInfo(roomNumber, bedNumber, currentDate);
+                    if (isOccupied && !payment.isEmpty()) {
+                        QString clientName = payment["client_full_name"].toString();
+                        if (!clientName.isEmpty()) {
+                            tooltip += QString("Клиент: %1\n").arg(clientName);
                         }
 
-                        if (!payment.isEmpty()) {
-                            double totalPrice = payment["total_price"].toDouble();
-                            double paidAmount = payment["paid_amount"].toDouble();
-                            double balance = payment["balance"].toDouble();
-                            int paidPercentage = payment["paid_percentage"].toInt();
-                            QString clientName = payment["client_name"].toString();
+                        if (isRoomBooking) {
+                            tooltip += "⚠ БРОНИРОВАНИЕ КОМНАТЫ ЦЕЛИКОМ\n";
+                        }
 
-                            if (!clientName.isEmpty()) {
-                                tooltip += QString("Клиент: %1\n").arg(clientName);
-                            }
+                        tooltip += QString("Общая стоимость: %1 руб.\n"
+                                         "Оплачено: %2 руб.\n"
+                                         "Остаток: %3 руб.\n"
+                                         "Способ оплаты: %4\n")
+                            .arg(totalPrice, 0, 'f', 2)
+                            .arg(paidAmount, 0, 'f', 2)
+                            .arg(balance, 0, 'f', 2)
+                            .arg(payment["payment_method"].toString());
 
-                            tooltip += QString("Общая стоимость: %1 руб.\n"
-                                             "Оплачено: %2 руб.\n"
-                                             "Остаток: %3 руб.\n"
-                                             "Оплачено: %4%")
-                                .arg(totalPrice, 0, 'f', 2)
-                                .arg(paidAmount, 0, 'f', 2)
-                                .arg(balance, 0, 'f', 2)
+                        if (balance <= 0) {
+                            tooltip += "Статус: Полностью оплачено";
+                        } else if (paidAmount > 0) {
+                            tooltip += QString("Статус: Частично оплачено (%1%)")
                                 .arg(paidPercentage);
-
-                            if (balance <= 0) {
-                                tooltip += "\nСтатус: Полностью оплачено";
-                            } else if (paidAmount > 0) {
-                                tooltip += "\nСтатус: Частично оплачено";
-                            } else {
-                                tooltip += "\nСтатус: Не оплачено";
-                            }
                         } else {
-                            tooltip += "Статус: Занято (информация об оплате недоступна)";
+                            tooltip += "Статус: Не оплачено";
                         }
                     } else {
                         tooltip += "Статус: Свободно";
@@ -2093,52 +2143,74 @@ void HostelManager::updateTableColors()
                         tooltip += "\nВыходной день";
                     }
 
-                    // Получаем информацию о бронировании для занятых ячеек
-                    if (isOccupied && database->isDatabaseConnected()) {
-                        // Получаем информацию о бронировании
-                        QSqlQuery query(database->getDatabase());
-                        query.prepare("SELECT c.first_name || ' ' || c.last_name as client_name, "
-                                     "bk.check_in_date, bk.check_out_date "
-                                     "FROM bookings bk "
-                                     "JOIN clients c ON bk.client_id = c.id "
-                                     "JOIN beds b ON bk.bed_id = b.id "
-                                     "JOIN rooms r ON b.room_id = r.id "
-                                     "WHERE r.room_number = ? AND b.bed_number = ? "
-                                     "AND bk.status = 'active' "
-                                     "AND ? BETWEEN bk.check_in_date AND bk.check_out_date");
-                        query.addBindValue(roomNumber);
-                        query.addBindValue(bedNumber);
-                        query.addBindValue(currentDate.toString("yyyy-MM-dd"));
+                    item->setToolTip(tooltip);
 
-                        if (query.exec() && query.next()) {
-                            QString clientName = query.value(0).toString();
-                            QDate checkIn = QDate::fromString(query.value(1).toString(), "yyyy-MM-dd");
-                            QDate checkOut = QDate::fromString(query.value(2).toString(), "yyyy-MM-dd");
+                } else {
+                    // Для свободных мест
+                    QColor baseColor = categoryColor.lighter(120);
 
-                            if (!clientName.isEmpty() && !tooltip.contains("Клиент:")) {
-                                tooltip += QString("\nКлиент: %1").arg(clientName);
-                            }
+                    if (isWeekend) {
+                        // Смешиваем цвет категории с цветом выходных
+                        baseColor = QColor(
+                            (baseColor.red() * 0.7 + weekendColor.red() * 0.3),
+                            (baseColor.green() * 0.7 + weekendColor.green() * 0.3),
+                            (baseColor.blue() * 0.7 + weekendColor.blue() * 0.3)
+                        );
+                    }
 
-                            if (!tooltip.contains("Период:")) {
-                                tooltip += QString("\nПериод: %1 - %2")
-                                    .arg(checkIn.toString("dd.MM.yyyy"))
-                                    .arg(checkOut.toString("dd.MM.yyyy"));
-                            }
-                        }
+                    item->setBackground(QBrush(baseColor));
+                    item->setText("");
+
+                    // Устанавливаем цвет текста для контраста
+                    if (baseColor.lightness() > 150) {
+                        item->setForeground(QBrush(Qt::black));
+                    } else {
+                        item->setForeground(QBrush(Qt::white));
+                    }
+
+                    // Подсказка для свободного места
+                    QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\nСтатус: Свободно\nКатегория: %4")
+                        .arg(roomNumber)
+                        .arg(bedNumber)
+                        .arg(currentDate.toString("dd.MM.yyyy - dddd"))
+                        .arg(category);
+
+                    if (isWeekend) {
+                        tooltip += "\nВыходной день";
                     }
 
                     item->setToolTip(tooltip);
                 }
+
+                item->setTextAlignment(Qt::AlignCenter);
             }
         }
 
         // Обновляем статус
         QDate endDate = currentStartDate.addDays(DAYS_COUNT - 1);
         QString dbStatus = database->isDatabaseConnected() ? "подключена" : "не подключена (демо)";
-        ui->lblStatus->setText(QString("Период: %1 - %2 | База данных: %3 | Обновлено: %4")
+
+        // Подсчитываем статистику
+        int totalOccupied = 0;
+        int totalRoomBookings = 0;
+
+        for (const auto& dates : occupiedDates) {
+            totalOccupied += dates.size();
+        }
+
+        // Подсчитываем количество бронирований комнат
+        QSet<int> uniqueRoomBookingGroups;
+        for (const auto& group : roomBookingGroups) {
+            uniqueRoomBookingGroups.insert(group);
+        }
+        totalRoomBookings = uniqueRoomBookingGroups.size();
+
+        ui->lblStatus->setText(QString("Период: %1 - %2 | База данных: %3 | Занято мест: %4 | Комнат целиком: %5 | Обновлено: %6")
             .arg(currentStartDate.toString("dd.MM.yyyy"))
             .arg(endDate.toString("dd.MM.yyyy"))
             .arg(dbStatus)
+            .arg(totalOccupied)
+            .arg(totalRoomBookings)
             .arg(QTime::currentTime().toString("hh:mm:ss")));
 
         // Обновляем название группы
@@ -2152,7 +2224,6 @@ void HostelManager::updateTableColors()
         qDebug() << "Неизвестная ошибка при обновлении цветов";
     }
 }
-
 // Слот для добавления нового бронирования
 void HostelManager::onAddBooking()
 {
@@ -2161,35 +2232,65 @@ void HostelManager::onAddBooking()
         return;
     }
 
-    // Используем явное объявление переменной
     AddBookingDialog *bookingDialog = new AddBookingDialog(database, this);
 
     if (bookingDialog->exec() == QDialog::Accepted) {
-        // Создаем бронирование
-        if (database->addBooking(bookingDialog->bedId(),
-                                bookingDialog->clientId(),
-                                bookingDialog->checkInDate(),
-                                bookingDialog->checkOutDate(),
-                                bookingDialog->totalPrice(),
-                                bookingDialog->paidAmount(),
-                                bookingDialog->paymentMethod())) {
-            QMessageBox::information(this, "Успех",
-                QString("Бронирование успешно создано!\n"
-                       "Общая стоимость: %1 руб.")
-                    .arg(bookingDialog->totalPrice(), 0, 'f', 2));
+        bool success = false;
+        QString message;
 
-            // Обновляем таблицу
-            updateTableColors();
+        if (bookingDialog->bookingType() == AddBookingDialog::Place) {
+            // Бронирование одного места
+            success = database->addBooking(bookingDialog->bedId(),
+                                          bookingDialog->clientId(),
+                                          bookingDialog->checkInDate(),
+                                          bookingDialog->checkOutDate(),
+                                          bookingDialog->totalPrice(),
+                                          bookingDialog->paidAmount(),
+                                          bookingDialog->paymentMethod());
+
+            if (success) {
+                message = QString("Бронирование одного места успешно создано!\n"
+                                 "Общая стоимость: %1 руб.\n"
+                                 "Оплачено: %2 руб.")
+                    .arg(bookingDialog->totalPrice(), 0, 'f', 2)
+                    .arg(bookingDialog->paidAmount(), 0, 'f', 2);
+            }
         } else {
-            QMessageBox::warning(this, "Ошибка",
-                "Не удалось создать бронирование.\n"
-                "Возможно, койка уже забронирована на эти даты.");
+            // Бронирование всей комнаты
+            success = database->addRoomBooking(bookingDialog->roomId(),
+                                              bookingDialog->clientId(),
+                                              bookingDialog->checkInDate(),
+                                              bookingDialog->checkOutDate(),
+                                              bookingDialog->totalPrice(),
+                                              bookingDialog->paidAmount(),
+                                              bookingDialog->paymentMethod());
+
+            if (success) {
+                message = QString("Бронирование всей комнаты успешно создано!\n"
+                                 "Общая стоимость: %1 руб.\n"
+                                 "Оплачено: %2 руб.\n"
+                                 "Оплата распределена между всеми койками в комнате.")
+                    .arg(bookingDialog->totalPrice(), 0, 'f', 2)
+                    .arg(bookingDialog->paidAmount(), 0, 'f', 2);
+            }
+        }
+
+        if (success) {
+            QMessageBox::information(this, "Успех", message);
+            updateTableColors(); // Обновляем таблицу
+        } else {
+            QString errorMessage = "Не удалось создать бронирование.\n";
+            if (bookingDialog->bookingType() == AddBookingDialog::WholeRoom) {
+                errorMessage += "Возможно, некоторые койки в комнате уже забронированы на эти даты.";
+            } else {
+                errorMessage += "Возможно, койка уже забронирована на эти даты.";
+            }
+            QMessageBox::warning(this, "Ошибка", errorMessage);
         }
     }
 
     bookingDialog->deleteLater();
 }
-
 // Слот для двойного клика
 void HostelManager::onTableDoubleClicked(const QModelIndex &index)
 {
@@ -2213,7 +2314,6 @@ void HostelManager::onTableDoubleClicked(const QModelIndex &index)
     QString roomNumber = roomItem->text();
     QString bedNumberStr = bedItem->text();
     int bedNumber = bedNumberStr.toInt();
-    QString category = categoryItem->text();
 
     // Вычисляем дату для выбранного столбца
     int dayIndex = col - 3;
@@ -2231,11 +2331,35 @@ void HostelManager::onTableDoubleClicked(const QModelIndex &index)
         // Ячейка свободна - открываем окно бронирования
         openBookingDialogForCell(roomNumber, bedNumber, selectedDate);
     } else {
-        // Если мы здесь, значит ячейка занята - показываем диалог редактирования оплаты
+        // Проверяем, является ли это бронированием комнаты целиком
+        bool isRoomBooking = false;
+
+        // Получаем дополнительную информацию о бронировании
+        QSqlQuery query(database->getDatabase());
+        query.prepare("SELECT is_room_booking FROM bookings WHERE id = ?");
+        query.addBindValue(bookingInfo["booking_id"].toInt());
+
+        if (query.exec() && query.next()) {
+            isRoomBooking = query.value(0).toBool();
+        }
+
+        if (isRoomBooking) {
+            // Для бронирования комнаты целиком показываем специальное сообщение
+            QMessageBox::information(this, "Бронирование комнаты",
+                QString("Комната %1 забронирована целиком на %2.\n\n"
+                       "Клиент: %3\n"
+                       "Период: %4 - %5")
+                    .arg(roomNumber)
+                    .arg(selectedDate.toString("dd.MM.yyyy"))
+                    .arg(bookingInfo["client_name"].toString())
+                    .arg(QDate::fromString(bookingInfo["check_in_date"].toString(), "yyyy-MM-dd").toString("dd.MM.yyyy"))
+                    .arg(QDate::fromString(bookingInfo["check_out_date"].toString(), "yyyy-MM-dd").toString("dd.MM.yyyy")));
+        }
+
+        // Показываем диалог редактирования оплаты
         showEditPaymentDialog(bookingInfo, roomNumber, bedNumber, selectedDate);
     }
 }
-
 // Слот для отображения контекстного меню
 void HostelManager::onCustomContextMenuRequested(const QPoint &pos)
 {
@@ -2440,7 +2564,7 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
         return;
     }
 
-    // Получаем ID комнаты и койки
+    // Получаем ID комнаты
     int roomId = roomIdMap.value(roomNumber, -1);
     if (roomId <= 0) {
         qDebug() << "Не найден ID комнаты для:" << roomNumber;
@@ -2448,6 +2572,7 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
         return;
     }
 
+    // Получаем ID койки
     int bedId = -1;
     QSqlQuery query(database->getDatabase());
     query.prepare("SELECT b.id FROM beds b "
@@ -2464,6 +2589,56 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
         return;
     }
 
+    // Проверяем, есть ли уже активные бронирования в этой комнате на выбранную дату
+    QSqlQuery checkRoomQuery(database->getDatabase());
+    checkRoomQuery.prepare("SELECT COUNT(DISTINCT is_room_booking) FROM bookings bk "
+                          "JOIN beds b ON bk.bed_id = b.id "
+                          "WHERE b.room_id = ? "
+                          "AND bk.status = 'active' "
+                          "AND ? BETWEEN bk.check_in_date AND bk.check_out_date");
+    checkRoomQuery.addBindValue(roomId);
+    checkRoomQuery.addBindValue(startDate.toString("yyyy-MM-dd"));
+
+    bool roomHasBookings = false;
+    bool roomHasWholeRoomBooking = false;
+
+    if (checkRoomQuery.exec() && checkRoomQuery.next()) {
+        roomHasBookings = checkRoomQuery.value(0).toInt() > 0;
+    }
+
+    // Проверяем, есть ли бронирование комнаты целиком
+    if (roomHasBookings) {
+        QSqlQuery checkWholeRoomQuery(database->getDatabase());
+        checkWholeRoomQuery.prepare("SELECT COUNT(*) FROM bookings bk "
+                                   "JOIN beds b ON bk.bed_id = b.id "
+                                   "WHERE b.room_id = ? "
+                                   "AND bk.status = 'active' "
+                                   "AND bk.is_room_booking = 1 "
+                                   "AND ? BETWEEN bk.check_in_date AND bk.check_out_date");
+        checkWholeRoomQuery.addBindValue(roomId);
+        checkWholeRoomQuery.addBindValue(startDate.toString("yyyy-MM-dd"));
+
+        if (checkWholeRoomQuery.exec() && checkWholeRoomQuery.next()) {
+            roomHasWholeRoomBooking = checkWholeRoomQuery.value(0).toInt() > 0;
+        }
+    }
+
+    // Если комната уже забронирована целиком, показываем предупреждение
+    if (roomHasWholeRoomBooking) {
+        QMessageBox::warning(this, "Комната занята",
+            QString("Комната %1 уже забронирована целиком на %2.\n\n"
+                   "Вы можете редактировать оплату существующего бронирования.")
+                .arg(roomNumber)
+                .arg(startDate.toString("dd.MM.yyyy")));
+
+        // Получаем информацию о бронировании для редактирования оплаты
+        QVariantMap bookingInfo = database->getBookingInfoByDate(roomNumber, bedNumber, startDate);
+        if (!bookingInfo.isEmpty()) {
+            showEditPaymentDialog(bookingInfo, roomNumber, bedNumber, startDate);
+        }
+        return;
+    }
+
     // Создаем диалог бронирования
     AddBookingDialog *bookingDialog = new AddBookingDialog(database, this);
 
@@ -2473,44 +2648,118 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
     // Устанавливаем комнату и койку
     bookingDialog->setRoomAndBed(roomId, bedId);
 
+    // Если в комнате уже есть другие бронирования на эту дату,
+    // предлагаем забронировать комнату целиком
+    if (roomHasBookings) {
+        int result = QMessageBox::question(this, "Бронирование комнаты",
+            QString("В комнате %1 уже есть бронирования на %2.\n\n"
+                   "Хотите забронировать всю комнату целиком?\n"
+                   "Это создаст бронирования для всех свободных коек в комнате.")
+                .arg(roomNumber)
+                .arg(startDate.toString("dd.MM.yyyy")),
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+            QMessageBox::No);
+
+        if (result == QMessageBox::Yes) {
+            // Выбираем режим "Комната целиком"
+            // Примечание: нужно добавить метод для установки типа бронирования в AddBookingDialog
+            // bookingDialog->setBookingType(AddBookingDialog::WholeRoom);
+
+            // Показываем информационное сообщение
+            QMessageBox::information(this, "Бронирование комнаты",
+                "Будет создано бронирование для всех свободных коек в комнате.\n"
+                "Цена будет рассчитана как сумма цен всех коек.");
+        } else if (result == QMessageBox::Cancel) {
+            bookingDialog->deleteLater();
+            return;
+        }
+    }
+
     // Показываем диалог
     if (bookingDialog->exec() == QDialog::Accepted) {
-        // Создаем бронирование
-        if (database->addBooking(bookingDialog->bedId(),
-                                bookingDialog->clientId(),
-                                bookingDialog->checkInDate(),
-                                bookingDialog->checkOutDate(),
-                                bookingDialog->totalPrice(),
-                                bookingDialog->paidAmount(),
-                                bookingDialog->paymentMethod())) {
-            QMessageBox::information(this, "Успех",
-                QString("Бронирование успешно создано!\n"
-                       "Комната: %1, Койка: %2\n"
-                       "Период: %3 - %4\n"
-                       "Общая стоимость: %5 руб.")
+        bool success = false;
+        QString message;
+
+        if (bookingDialog->bookingType() == AddBookingDialog::Place) {
+            // Бронирование одного места
+            success = database->addBooking(bookingDialog->bedId(),
+                                          bookingDialog->clientId(),
+                                          bookingDialog->checkInDate(),
+                                          bookingDialog->checkOutDate(),
+                                          bookingDialog->totalPrice(),
+                                          bookingDialog->paidAmount(),
+                                          bookingDialog->paymentMethod());
+
+            if (success) {
+                message = QString("Бронирование одного места успешно создано!\n"
+                                 "Комната: %1, Койка: %2\n"
+                                 "Период: %3 - %4\n"
+                                 "Общая стоимость: %5 руб.\n"
+                                 "Оплачено: %6 руб.")
                     .arg(roomNumber)
                     .arg(bedNumber)
                     .arg(bookingDialog->checkInDate().toString("dd.MM.yyyy"))
                     .arg(bookingDialog->checkOutDate().toString("dd.MM.yyyy"))
-                    .arg(bookingDialog->totalPrice(), 0, 'f', 2));
-
-            // Обновляем таблицу
-            updateTableColors();
+                    .arg(bookingDialog->totalPrice(), 0, 'f', 2)
+                    .arg(bookingDialog->paidAmount(), 0, 'f', 2);
+            }
         } else {
-            QMessageBox::warning(this, "Ошибка",
-                QString("Не удалось создать бронирование!\n"
-                       "Возможно, койка уже забронирована на эти даты:\n"
-                       "Комната: %1, Койка: %2\n"
-                       "Период: %3 - %4")
+            // Бронирование всей комнаты
+            success = database->addRoomBooking(bookingDialog->roomId(),
+                                              bookingDialog->clientId(),
+                                              bookingDialog->checkInDate(),
+                                              bookingDialog->checkOutDate(),
+                                              bookingDialog->totalPrice(),
+                                              bookingDialog->paidAmount(),
+                                              bookingDialog->paymentMethod());
+
+            if (success) {
+                // Получаем количество коек в комнате для информационного сообщения
+                QSqlQuery bedCountQuery(database->getDatabase());
+                bedCountQuery.prepare("SELECT COUNT(*) FROM beds WHERE room_id = ? AND is_active = 1");
+                bedCountQuery.addBindValue(bookingDialog->roomId());
+
+                int bedCount = 0;
+                if (bedCountQuery.exec() && bedCountQuery.next()) {
+                    bedCount = bedCountQuery.value(0).toInt();
+                }
+
+                message = QString("Бронирование всей комнаты успешно создано!\n"
+                                 "Комната: %1\n"
+                                 "Количество коек: %2\n"
+                                 "Период: %3 - %4\n"
+                                 "Общая стоимость: %5 руб.\n"
+                                 "Оплачено: %6 руб.\n\n"
+                                 "Оплата распределена между всеми койками в комнате.")
                     .arg(roomNumber)
+                    .arg(bedCount)
+                    .arg(bookingDialog->checkInDate().toString("dd.MM.yyyy"))
+                    .arg(bookingDialog->checkOutDate().toString("dd.MM.yyyy"))
+                    .arg(bookingDialog->totalPrice(), 0, 'f', 2)
+                    .arg(bookingDialog->paidAmount(), 0, 'f', 2);
+            }
+        }
+
+        if (success) {
+            QMessageBox::information(this, "Успех", message);
+            updateTableColors(); // Обновляем таблицу
+        } else {
+            QString errorMessage = "Не удалось создать бронирование.\n";
+            if (bookingDialog->bookingType() == AddBookingDialog::WholeRoom) {
+                errorMessage += "Возможно, некоторые койки в комнате уже забронированы на эти даты.";
+            } else {
+                errorMessage += QString("Койка %1 в комнате %2 уже забронирована на %3.")
                     .arg(bedNumber)
-                    .arg(startDate.toString("dd.MM.yyyy"))
-                    .arg(startDate.addDays(1).toString("dd.MM.yyyy")));
+                    .arg(roomNumber)
+                    .arg(startDate.toString("dd.MM.yyyy"));
+            }
+            QMessageBox::warning(this, "Ошибка", errorMessage);
         }
     }
 
     bookingDialog->deleteLater();
 }
+
 void HostelManager::showEditPaymentDialog(const QVariantMap &bookingInfo,
                                          const QString &roomNumber,
                                          int bedNumber,

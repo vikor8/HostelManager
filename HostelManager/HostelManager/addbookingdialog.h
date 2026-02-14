@@ -20,6 +20,8 @@ class AddBookingDialog : public QDialog
     Q_OBJECT
 
 public:
+    enum BookingType { Place, WholeRoom }; // Тип бронирования: Место или Комната целиком
+
     explicit AddBookingDialog(Database *db, QWidget *parent = nullptr);
     ~AddBookingDialog();
 
@@ -32,15 +34,19 @@ public:
     double pricePerDay() const { return priceSpin->value(); }
     double totalPrice() const;
     QString paymentMethod() const;
-    double paidAmount() const { return paidSpin->value(); } // Новый геттер для оплаченной суммы
+    double paidAmount() const { return paidSpin->value(); }
+    BookingType bookingType() const; // Новый геттер для типа бронирования
+    QList<int> getAllBedsInRoom() const; // Возвращает список ID всех коек в комнате
 
-    // Проверка доступности койки
+
+    // Проверка доступности койки или комнаты
     bool isBedAvailable() const;
+    bool isRoomAvailable() const; // Новый метод для проверки доступности комнаты
 
-    //  методы для предварительного заполнения
+    // методы для предварительного заполнения
     void setRoomAndBed(int roomId, int bedId);
     void setDates(const QDate &checkIn, const QDate &checkOut);
-
+    void setBookingType(BookingType type);
 private slots:
     void loadClients();
     void loadRooms();
@@ -50,8 +56,9 @@ private slots:
     void validateDates();
     void onAccept();
     void validateForm();
-    void updatePaidAmount(); // Новый слот для обновления оплаченной суммы
+    void updatePaidAmount();
     void onAddClientButtonClicked();
+    void onBookingTypeChanged(); // Новый слот для изменения типа бронирования
 
 private:
     Database *database;
@@ -62,14 +69,21 @@ private:
     QComboBox *roomCombo;
     QComboBox *bedCombo;
     QDoubleSpinBox *priceSpin;
-    QDoubleSpinBox *paidSpin; // Новое поле для оплаченной суммы
+    QDoubleSpinBox *paidSpin;
     QLabel *totalPriceLabel;
-    QLabel *balanceLabel; // Метка для отображения остатка
+    QLabel *balanceLabel;
 
-    // Новые элементы для оплаты
+    // Новые элементы для выбора типа бронирования
+    QRadioButton *placeRadio;
+    QRadioButton *wholeRoomRadio;
+    QButtonGroup *bookingTypeGroup;
+    BookingType currentBookingType;
+
+    // Элементы для оплаты
     QRadioButton *cashRadio;
     QRadioButton *cardRadio;
     QRadioButton *transferRadio;
+    QRadioButton *legalEntityRadio; // Новый способ оплаты "на р/с юрлица"
     QButtonGroup *paymentGroup;
 
     QPushButton *addClientButton;
@@ -82,7 +96,10 @@ private:
     void populateClientCombo(const QString& filter = QString());
     void populateRoomCombo();
     void populateBedCombo(int roomId);
+    void updateBedComboVisibility(); // Новый метод для управления видимостью поля с койками
 
+    // Вспомогательные методы для расчета цены
+    double getRoomTotalPrice() const; // Общая стоимость для всей комнаты
 };
 
 #endif // ADDBOOKINGDIALOG_H

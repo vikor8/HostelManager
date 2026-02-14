@@ -19,10 +19,10 @@
 #include <QToolTip>
 #include <QApplication>
 
-
 AddBookingDialog::AddBookingDialog(Database *db, QWidget *parent)
     : QDialog(parent)
     , database(db)
+    , currentBookingType(Place) // По умолчанию "Место"
 {
     setupUi();
     loadClients();
@@ -33,13 +33,12 @@ AddBookingDialog::AddBookingDialog(Database *db, QWidget *parent)
     }
 
     // Устанавливаем даты по умолчанию
-//    checkInEdit->setMinimumDate(QDate(1900, 1, 1)); // Или QDate()
-//    checkOutEdit->setMinimumDate(QDate(1900, 1, 1)); // Или QDate()
     checkInEdit->setCalendarPopup(true);
     checkInEdit->setDisplayFormat("dd.MM.yyyy");
 
     calculateTotalPrice();
     validateForm();
+    updateBedComboVisibility(); // Устанавливаем видимость поля с койками
 }
 
 AddBookingDialog::~AddBookingDialog()
@@ -53,28 +52,52 @@ void AddBookingDialog::setupUi()
 
     QFormLayout *formLayout = new QFormLayout(this);
 
-    // Комбобокс для выбора клиента с возможностью поиска
+    // --- Секция выбора типа бронирования ---
+    QLabel *bookingTypeTitle = new QLabel("Тип бронирования:", this);
+    bookingTypeTitle->setStyleSheet("font-weight: bold;");
+
+    QWidget *bookingTypeWidget = new QWidget(this);
+    QHBoxLayout *bookingTypeLayout = new QHBoxLayout(bookingTypeWidget);
+    bookingTypeLayout->setContentsMargins(0, 0, 0, 0);
+
+    placeRadio = new QRadioButton("Место", bookingTypeWidget);
+    wholeRoomRadio = new QRadioButton("Комната целиком", bookingTypeWidget);
+
+    bookingTypeGroup = new QButtonGroup(this);
+    bookingTypeGroup->addButton(placeRadio);
+    bookingTypeGroup->addButton(wholeRoomRadio);
+
+    placeRadio->setChecked(true); // По умолчанию "Место"
+
+    bookingTypeLayout->addWidget(placeRadio);
+    bookingTypeLayout->addWidget(wholeRoomRadio);
+    bookingTypeLayout->addStretch();
+
+    formLayout->addRow(bookingTypeTitle, bookingTypeWidget);
+
+    // --- Секция клиента ---
+    QLabel *clientTitle = new QLabel("*Клиент:", this);
+    clientTitle->setStyleSheet("font-weight: bold;");
+
+    QWidget *clientWidget = new QWidget(this);
+    QHBoxLayout *clientLayout = new QHBoxLayout(clientWidget);
+    clientLayout->setContentsMargins(0, 0, 0, 0);
+
     clientCombo = new QComboBox(this);
     clientCombo->setEditable(true);
     clientCombo->setInsertPolicy(QComboBox::NoInsert);
     clientCombo->setPlaceholderText("Выберите или введите фамилию клиента");
 
-    // Настраиваем автодополнение для клиентов
     QCompleter *completer = new QCompleter(clientCombo);
     completer->setFilterMode(Qt::MatchContains);
     completer->setCaseSensitivity(Qt::CaseInsensitive);
     clientCombo->setCompleter(completer);
 
-    // Создаем layout для поля клиента с кнопкой "+"
-    QHBoxLayout *clientLayout = new QHBoxLayout();
     clientLayout->addWidget(clientCombo);
 
-    // Кнопка "+" для добавления нового клиента
-    QPushButton *addClientButton = new QPushButton("+", this);
+    addClientButton = new QPushButton("+", this);
     addClientButton->setFixedSize(30, 30);
     addClientButton->setToolTip("Добавить нового клиента");
-
-    // Стиль как у кнопки OK (синий цвет)
     addClientButton->setStyleSheet(
         "QPushButton {"
         "   background-color: #bbbbbb;"
@@ -105,7 +128,16 @@ void AddBookingDialog::setupUi()
     clientLayout->addWidget(addClientButton);
     clientLayout->setSpacing(5);
 
-    // Поля для дат
+    formLayout->addRow(clientTitle, clientWidget);
+
+    // --- Поля для дат ---
+    QLabel *dateTitle = new QLabel("*Даты:", this);
+    dateTitle->setStyleSheet("font-weight: bold;");
+
+    QWidget *dateWidget = new QWidget(this);
+    QHBoxLayout *dateLayout = new QHBoxLayout(dateWidget);
+    dateLayout->setContentsMargins(0, 0, 0, 0);
+
     checkInEdit = new QDateEdit(this);
     checkInEdit->setDate(QDate::currentDate());
     checkInEdit->setCalendarPopup(true);
@@ -118,93 +150,99 @@ void AddBookingDialog::setupUi()
     checkOutEdit->setDisplayFormat("dd.MM.yyyy");
     checkOutEdit->setMinimumDate(QDate::currentDate().addDays(1));
 
-    // Комбобокс для выбора комнаты
+    dateLayout->addWidget(new QLabel("Заезд:", this));
+    dateLayout->addWidget(checkInEdit);
+    dateLayout->addWidget(new QLabel("Выезд:", this));
+    dateLayout->addWidget(checkOutEdit);
+    dateLayout->addStretch();
+
+    formLayout->addRow(dateTitle, dateWidget);
+
+    // --- Комната ---
+    QLabel *roomTitle = new QLabel("*Номер комнаты:", this);
+    roomTitle->setStyleSheet("font-weight: bold;");
+
     roomCombo = new QComboBox(this);
     roomCombo->setPlaceholderText("Выберите номер комнаты");
+    formLayout->addRow(roomTitle, roomCombo);
 
-    // Комбобокс для выбора койки
+    // --- Койко-место ---
+    QLabel *bedTitle = new QLabel("*Койко-место:", this);
+    bedTitle->setStyleSheet("font-weight: bold;");
+
     bedCombo = new QComboBox(this);
     bedCombo->setPlaceholderText("Выберите койко-место");
+    formLayout->addRow(bedTitle, bedCombo);
 
-    // Поле для стоимости в сутки
+    // --- Цена ---
+    QLabel *priceTitle = new QLabel("*Стоимость в сутки:", this);
+    priceTitle->setStyleSheet("font-weight: bold;");
+
     priceSpin = new QDoubleSpinBox(this);
     priceSpin->setRange(100, 10000);
     priceSpin->setSuffix(" руб./сутки");
     priceSpin->setDecimals(2);
     priceSpin->setSingleStep(100);
+    formLayout->addRow(priceTitle, priceSpin);
 
-    // Поле для оплаченной суммы
+    // --- Суммы ---
     paidSpin = new QDoubleSpinBox(this);
     paidSpin->setRange(0, 100000);
     paidSpin->setSuffix(" руб.");
     paidSpin->setDecimals(2);
     paidSpin->setSingleStep(100);
     paidSpin->setValue(0);
+    formLayout->addRow("Оплачено:", paidSpin);
 
-    // Метка для отображения общей стоимости
     totalPriceLabel = new QLabel(this);
     totalPriceLabel->setStyleSheet("font-weight: bold; color: #2E8B57;");
+    formLayout->addRow("Общая стоимость:", totalPriceLabel);
 
-    // Метка для отображения остатка
     balanceLabel = new QLabel(this);
     balanceLabel->setStyleSheet("font-weight: bold;");
-
-    // Добавляем элементы в форму
-    formLayout->addRow("*Клиент:", clientLayout);
-    formLayout->addRow("*Дата заезда:", checkInEdit);
-    formLayout->addRow("*Дата выезда:", checkOutEdit);
-    formLayout->addRow("*Номер комнаты:", roomCombo);
-    formLayout->addRow("*Койко-место:", bedCombo);
-    formLayout->addRow("*Стоимость в сутки:", priceSpin);
-    formLayout->addRow("Оплачено:", paidSpin);
-    formLayout->addRow("Общая стоимость:", totalPriceLabel);
     formLayout->addRow("Остаток к оплате:", balanceLabel);
 
-    // Добавляем разделитель или заголовок для способа оплаты
+    // --- Способы оплаты ---
     QLabel *paymentTitle = new QLabel("Способ оплаты:", this);
     paymentTitle->setStyleSheet("font-weight: bold;");
-    formLayout->addRow("", paymentTitle);
 
-    // Создаем контейнер для радио-кнопок
     QWidget *paymentWidget = new QWidget(this);
     QHBoxLayout *paymentLayout = new QHBoxLayout(paymentWidget);
     paymentLayout->setContentsMargins(0, 0, 0, 0);
 
-    // Создаем радио-кнопки
     cashRadio = new QRadioButton("Наличные", paymentWidget);
     cardRadio = new QRadioButton("Безнал", paymentWidget);
     transferRadio = new QRadioButton("Перевод", paymentWidget);
+    legalEntityRadio = new QRadioButton("На р/с юрлица", paymentWidget); // Новый способ оплаты
 
-    // Создаем группу кнопок
     paymentGroup = new QButtonGroup(this);
     paymentGroup->addButton(cashRadio);
     paymentGroup->addButton(cardRadio);
     paymentGroup->addButton(transferRadio);
+    paymentGroup->addButton(legalEntityRadio);
 
-    // Устанавливаем "Наличные" как выбранную по умолчанию
-    cashRadio->setChecked(true);
+    cashRadio->setChecked(true); // По умолчанию "Наличные"
 
-    // Добавляем кнопки в layout
     paymentLayout->addWidget(cashRadio);
     paymentLayout->addWidget(cardRadio);
     paymentLayout->addWidget(transferRadio);
+    paymentLayout->addWidget(legalEntityRadio);
     paymentLayout->addStretch();
 
-    formLayout->addRow("", paymentWidget);
+    formLayout->addRow(paymentTitle, paymentWidget);
 
-    // Добавляем подсказку об обязательных полях
+    // --- Подсказка об обязательных полях ---
     QLabel *requiredLabel = new QLabel("* - обязательные поля", this);
     requiredLabel->setStyleSheet("color: gray; font-style: italic;");
     formLayout->addRow("", requiredLabel);
 
-    // Кнопки
+    // --- Кнопки ---
     QDialogButtonBox *buttonBox = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
         Qt::Horizontal, this);
-
     formLayout->addRow(buttonBox);
 
-    // Соединяем сигналы и слоты
+    // --- Подключение сигналов и слотов ---
     connect(clientCombo->lineEdit(), &QLineEdit::textEdited, this, &AddBookingDialog::loadClients);
     connect(checkInEdit, &QDateEdit::dateChanged, this, &AddBookingDialog::validateDates);
     connect(checkOutEdit, &QDateEdit::dateChanged, this, &AddBookingDialog::validateDates);
@@ -216,7 +254,11 @@ void AddBookingDialog::setupUi()
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(addClientButton, &QPushButton::clicked, this, &AddBookingDialog::onAddClientButtonClicked);
 
-    // Добавляем соединения для проверки формы
+    // Новые соединения для типа бронирования
+    connect(placeRadio, &QRadioButton::toggled, this, &AddBookingDialog::onBookingTypeChanged);
+    connect(wholeRoomRadio, &QRadioButton::toggled, this, &AddBookingDialog::onBookingTypeChanged);
+
+    // Соединения для проверки формы
     connect(clientCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &AddBookingDialog::validateForm);
     connect(roomCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -238,6 +280,88 @@ void AddBookingDialog::setupUi()
 
     // Инициализируем отображение остатка
     updatePaidAmount();
+}
+
+// Новый слот для обработки изменения типа бронирования
+void AddBookingDialog::onBookingTypeChanged()
+{
+    if (placeRadio->isChecked()) {
+        currentBookingType = Place;
+    } else if (wholeRoomRadio->isChecked()) {
+        currentBookingType = WholeRoom;
+    }
+
+    updateBedComboVisibility();
+    updatePriceFromDatabase(); // Обновляем цену в соответствии с типом бронирования
+    validateForm();
+}
+
+// Новый метод для управления видимостью поля с койками
+void AddBookingDialog::updateBedComboVisibility()
+{
+    // Находим лейбл для поля "Койко-место" (он находится в форме)
+    QFormLayout *formLayout = qobject_cast<QFormLayout*>(layout());
+    if (!formLayout) return;
+
+    bool isPlaceMode = (currentBookingType == Place);
+
+    // Делаем видимым или невидимым поле с койками
+    bedCombo->setVisible(isPlaceMode);
+
+    // Находим и скрываем/показываем соответствующий лейбл
+    for (int i = 0; i < formLayout->rowCount(); ++i) {
+        QLabel *label = qobject_cast<QLabel*>(formLayout->itemAt(i, QFormLayout::LabelRole)->widget());
+        if (label && label->text().contains("Койко-место", Qt::CaseInsensitive)) {
+            label->setVisible(isPlaceMode);
+            break;
+        }
+    }
+
+    // Если режим "Комната целиком", сбрасываем выбор койки
+    if (!isPlaceMode) {
+        bedCombo->setCurrentIndex(-1);
+    }
+
+    // Перестраиваем layout
+    layout()->activate();
+}
+
+// Новый метод для проверки доступности комнаты целиком
+bool AddBookingDialog::isRoomAvailable() const
+{
+    int roomId = this->roomId();
+    QDate checkIn = checkInEdit->date();
+    QDate checkOut = checkOutEdit->date();
+
+    if (roomId <= 0 || !checkIn.isValid() || !checkOut.isValid()) {
+        return false;
+    }
+
+    if (!database || !database->isDatabaseConnected()) {
+        return false;
+    }
+
+    // Проверяем, что ВСЕ койки в комнате свободны
+    QSqlQuery query(database->getDatabase());
+    query.prepare("SELECT COUNT(*) FROM beds b "
+                  "WHERE b.room_id = ? AND b.is_active = 1 "
+                  "AND EXISTS ("
+                  "    SELECT 1 FROM bookings bk "
+                  "    WHERE bk.bed_id = b.id "
+                  "    AND bk.status = 'active' "
+                  "    AND bk.check_in_date < ? "
+                  "    AND bk.check_out_date > ?"
+                  ")");
+    query.addBindValue(roomId);
+    query.addBindValue(checkOut);
+    query.addBindValue(checkIn);
+
+    if (query.exec() && query.next()) {
+        int occupiedBeds = query.value(0).toInt();
+        return occupiedBeds == 0; // Комната доступна, если все койки свободны
+    }
+
+    return false;
 }
 // Новый метод для обновления оплаченной суммы и остатка
 void AddBookingDialog::updatePaidAmount()
@@ -280,20 +404,17 @@ void AddBookingDialog::calculateTotalPrice()
         totalPriceLabel->setText("0 руб.");
     }
 
-    updatePaidAmount(); // Обновляем остаток
+    updatePaidAmount();
 }
-
 // Обновляем validateForm для проверки оплаченной суммы
 void AddBookingDialog::validateForm()
 {
-    // Получаем кнопку OK
     QDialogButtonBox *buttonBox = findChild<QDialogButtonBox*>();
     if (!buttonBox) return;
 
     QPushButton *okButton = buttonBox->button(QDialogButtonBox::Ok);
     if (!okButton) return;
 
-    // Проверяем все обязательные поля
     bool allFieldsValid = true;
 
     // Проверка клиента
@@ -306,8 +427,8 @@ void AddBookingDialog::validateForm()
         allFieldsValid = false;
     }
 
-    // Проверка койки
-    if (bedId() <= 0) {
+    // Проверка койки (только для режима "Место")
+    if (currentBookingType == Place && bedId() <= 0) {
         allFieldsValid = false;
     }
 
@@ -323,14 +444,11 @@ void AddBookingDialog::validateForm()
         allFieldsValid = false;
     }
 
-    // Проверка оплаты (оплаченная сумма не может быть отрицательной)
+    // Проверка оплаты
     if (paidSpin->value() < 0) {
         allFieldsValid = false;
     }
 
-    // Способ оплаты всегда выбран (по умолчанию "Наличные")
-
-    // Активируем или деактивируем кнопку OK
     okButton->setEnabled(allFieldsValid);
 }
 
@@ -348,7 +466,7 @@ void AddBookingDialog::onAccept()
         return;
     }
 
-    if (bedId() <= 0) {
+    if (currentBookingType == Place && bedId() <= 0) {
         QMessageBox::warning(this, "Ошибка", "Выберите койко-место");
         return;
     }
@@ -358,20 +476,32 @@ void AddBookingDialog::onAccept()
         return;
     }
 
-    // Проверяем доступность койки
-    if (!isBedAvailable()) {
-          QMessageBox::warning(this, "Ошибка",
-              QString("Выбранное койко-место уже забронировано на указанные даты.\n"
-                     "Комната: %1, Койка: %2\n"
-                     "Период: %3 - %4\n\n"
-                     "Пожалуйста, выберите другие даты или другую койку.")
-                  .arg(roomCombo->currentText())
-                  .arg(bedCombo->currentText())
-                  .arg(checkInEdit->date().toString("dd.MM.yyyy"))
-                  .arg(checkOutEdit->date().toString("dd.MM.yyyy")));
-          return;
-      }
-
+    // Проверяем доступность в зависимости от типа бронирования
+    if (currentBookingType == Place) {
+        if (!isBedAvailable()) {
+            QMessageBox::warning(this, "Ошибка",
+                QString("Выбранное койко-место уже забронировано на указанные даты.\n"
+                       "Комната: %1, Койка: %2\n"
+                       "Период: %3 - %4\n\n"
+                       "Пожалуйста, выберите другие даты или другую койку.")
+                    .arg(roomCombo->currentText())
+                    .arg(bedCombo->currentText())
+                    .arg(checkInEdit->date().toString("dd.MM.yyyy"))
+                    .arg(checkOutEdit->date().toString("dd.MM.yyyy")));
+            return;
+        }
+    } else { // WholeRoom
+        if (!isRoomAvailable()) {
+            QMessageBox::warning(this, "Ошибка",
+                QString("Комната %1 уже занята на указанные даты.\n"
+                       "Период: %2 - %3\n\n"
+                       "Пожалуйста, выберите другие даты или другую комнату.")
+                    .arg(roomCombo->currentText())
+                    .arg(checkInEdit->date().toString("dd.MM.yyyy"))
+                    .arg(checkOutEdit->date().toString("dd.MM.yyyy")));
+            return;
+        }
+    }
 
     // Проверяем стоимость
     if (priceSpin->value() <= 0) {
@@ -387,7 +517,6 @@ void AddBookingDialog::onAccept()
 
     accept();
 }
-
 
 void AddBookingDialog::loadClients()
 {
@@ -534,22 +663,58 @@ void AddBookingDialog::populateBedCombo(int roomId)
     }
 }
 
+// Обновленный метод получения цены
 void AddBookingDialog::updatePriceFromDatabase()
 {
-    int bedId = bedCombo->currentData().toInt();
-    if (bedId <= 0) {
-        return;
-    }
+    if (currentBookingType == Place) {
+        // Режим "Место" - берем цену из выбранной койки
+        int bedId = bedCombo->currentData().toInt();
+        if (bedId <= 0) {
+            return;
+        }
 
-    QSqlQuery query(database->getDatabase());
-    query.prepare("SELECT price_per_day FROM beds WHERE id = ?");
-    query.addBindValue(bedId);
+        QSqlQuery query(database->getDatabase());
+        query.prepare("SELECT price_per_day FROM beds WHERE id = ?");
+        query.addBindValue(bedId);
 
-    if (query.exec() && query.next()) {
-        double price = query.value(0).toDouble();
-        priceSpin->setValue(price);
+        if (query.exec() && query.next()) {
+            double price = query.value(0).toDouble();
+            priceSpin->setValue(price);
+        }
+    } else {
+        // Режим "Комната целиком" - суммируем цены всех коек в комнате
+        int roomId = this->roomId();
+        if (roomId <= 0) {
+            return;
+        }
+
+        QSqlQuery query(database->getDatabase());
+        query.prepare("SELECT SUM(price_per_day) FROM beds WHERE room_id = ? AND is_active = 1");
+        query.addBindValue(roomId);
+
+        if (query.exec() && query.next()) {
+            double totalRoomPrice = query.value(0).toDouble();
+            priceSpin->setValue(totalRoomPrice);
+        }
     }
 }
+
+// Вспомогательный метод для расчета общей стоимости комнаты
+double AddBookingDialog::getRoomTotalPrice() const
+{
+    int roomId = this->roomId();
+    if (roomId <= 0) return 0.0;
+
+    QSqlQuery query(database->getDatabase());
+    query.prepare("SELECT SUM(price_per_day) FROM beds WHERE room_id = ? AND is_active = 1");
+    query.addBindValue(roomId);
+
+    if (query.exec() && query.next()) {
+        return query.value(0).toDouble();
+    }
+    return 0.0;
+}
+
 
 void AddBookingDialog::validateDates()
 {
@@ -597,6 +762,13 @@ double AddBookingDialog::totalPrice() const
     return 0.0;
 }
 
+// Новый геттер для типа бронирования
+AddBookingDialog::BookingType AddBookingDialog::bookingType() const
+{
+    return currentBookingType;
+}
+
+// Обновленный геттер для способа оплаты
 QString AddBookingDialog::paymentMethod() const
 {
     if (cashRadio->isChecked()) {
@@ -605,8 +777,10 @@ QString AddBookingDialog::paymentMethod() const
         return "Безнал";
     } else if (transferRadio->isChecked()) {
         return "Перевод";
+    } else if (legalEntityRadio->isChecked()) {
+        return "На р/с юрлица";
     }
-    return "Наличные"; // По умолчанию
+    return "Наличные";
 }
 
 bool AddBookingDialog::isBedAvailable() const
@@ -826,7 +1000,7 @@ void AddBookingDialog::onAddClientButtonClicked()
             }
 
             // Показываем информационное сообщение
-//            QMessageBox::information(this, "Успех", message);
+
 
             // Если клиент выбран, показываем подсказку
             if (clientSelected) {
@@ -868,4 +1042,39 @@ void AddBookingDialog::onAddClientButtonClicked()
 
     // Удаляем диалог
     clientDialog->deleteLater();
+}
+
+
+QList<int> AddBookingDialog::getAllBedsInRoom() const
+{
+    QList<int> bedIds;
+    int roomId = this->roomId();
+
+    if (roomId <= 0 || !database || !database->isDatabaseConnected()) {
+        return bedIds;
+    }
+
+    QSqlQuery query(database->getDatabase());
+    query.prepare("SELECT id FROM beds WHERE room_id = ? AND is_active = 1 ORDER BY bed_number");
+    query.addBindValue(roomId);
+
+    if (query.exec()) {
+        while (query.next()) {
+            bedIds.append(query.value(0).toInt());
+        }
+    } else {
+        qDebug() << "Ошибка получения коек в комнате:" << query.lastError().text();
+    }
+
+    return bedIds;
+}
+
+void AddBookingDialog::setBookingType(BookingType type)
+{
+    if (type == Place) {
+        placeRadio->setChecked(true);
+    } else {
+        wholeRoomRadio->setChecked(true);
+    }
+    onBookingTypeChanged();
 }
