@@ -296,7 +296,7 @@ void AddBookingDialog::onBookingTypeChanged()
     validateForm();
 }
 
-// Новый метод для управления видимостью поля с койками
+// Метод для управления видимостью поля с койками
 void AddBookingDialog::updateBedComboVisibility()
 {
     // Находим лейбл для поля "Койко-место" (он находится в форме)

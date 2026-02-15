@@ -107,7 +107,7 @@ void ReportWindow::setupUi()
     QHBoxLayout *buttonLayout = new QHBoxLayout();
 
     printButton = new QPushButton("Печать отчета", this);
-    exportButton = new QPushButton("Экспорт в Excel", this);
+//    exportButton = new QPushButton("Экспорт в Excel", this);
     QPushButton *closeButton = new QPushButton("Закрыть", this);
 
     buttonLayout->addWidget(printButton);
@@ -188,7 +188,7 @@ void ReportWindow::generateSummaryReport()
         unpaidAmount = totalRevenue - paidAmount;
     }
 
-    // 2. Статистика по способам оплаты
+    // 2. Статистика по способам оплаты (все способы отдельно)
     query.prepare("SELECT "
                   "payment_method, "
                   "SUM(paid_amount) as paid_by_method "
@@ -270,7 +270,8 @@ void ReportWindow::generateSummaryReport()
                   "c.last_name || ' ' || c.first_name as client_name, "
                   "bk.total_price, "
                   "bk.paid_amount, "
-                  "bk.payment_method "
+                  "bk.payment_method, "
+                  "bk.is_room_booking "
                   "FROM bookings bk "
                   "JOIN beds b ON bk.bed_id = b.id "
                   "JOIN rooms r ON b.room_id = r.id "
@@ -293,6 +294,7 @@ void ReportWindow::generateSummaryReport()
             item["total_price"] = query.value(4);
             item["paid_amount"] = query.value(5);
             item["payment_method"] = query.value(6);
+            item["is_room_booking"] = query.value(7);
             detailedData.append(item);
         }
     }
@@ -337,7 +339,7 @@ void ReportWindow::generateSummaryReport()
                      .arg(totalBeds - occupiedBeds)
                      .arg(occupancyRate, 0, 'f', 1);
 
-    // Статистика по способам оплаты
+    // Статистика по способам оплаты (все способы отдельно)
     if (!paymentsByMethod.isEmpty()) {
         report += "<h3>3. Распределение оплаты по способам:</h3>";
         report += "<table border='1' cellpadding='5' style='border-collapse: collapse; width: 100%;'>"
@@ -348,17 +350,30 @@ void ReportWindow::generateSummaryReport()
             totalPaid += it.value();
         }
 
+        // Выводим все способы оплаты отдельно
         for (auto it = paymentsByMethod.begin(); it != paymentsByMethod.end(); ++it) {
-            double percentage = totalPaid > 0 ? (it.value() * 100 / totalPaid) : 0;
+            QString method = it.key();
+            double amount = it.value();
+            double percentage = totalPaid > 0 ? (amount * 100 / totalPaid) : 0;
+
             report += QString("<tr>"
                              "<td>%1</td>"
                              "<td align='right'>%2 руб.</td>"
                              "<td align='right'>%3%</td>"
                              "</tr>")
-                             .arg(it.key())
-                             .arg(it.value(), 0, 'f', 2)
+                             .arg(method)
+                             .arg(amount, 0, 'f', 2)
                              .arg(percentage, 0, 'f', 1);
         }
+
+        // Добавляем итоговую строку
+        report += QString("<tr style='font-weight: bold; background-color: #f0f0f0;'>"
+                         "<td>ИТОГО ОПЛАЧЕНО:</td>"
+                         "<td align='right'>%1 руб.</td>"
+                         "<td align='right'>100%</td>"
+                         "</tr>")
+                         .arg(totalPaid, 0, 'f', 2);
+
         report += "</table><br>";
     }
 
@@ -389,9 +404,9 @@ void ReportWindow::generateSummaryReport()
     // Заполняем таблицу детализированными данными
     reportTable->clear();
     reportTable->setRowCount(0);
-    reportTable->setColumnCount(8);
+    reportTable->setColumnCount(9);
     reportTable->setHorizontalHeaderLabels({
-        "Дата", "Комната", "Койка", "Клиент",
+        "Дата", "Комната", "Койка", "Тип", "Клиент",
         "Общая сумма", "Оплачено", "Остаток", "Способ оплаты"
     });
 
@@ -403,31 +418,34 @@ void ReportWindow::generateSummaryReport()
         double totalPrice = item["total_price"].toDouble();
         double paid = item["paid_amount"].toDouble();
         double balance = totalPrice - paid;
+        bool isRoomBooking = item["is_room_booking"].toBool();
+
+        QString bookingType = isRoomBooking ? "Комната целиком" : "Место";
 
         reportTable->setItem(i, 0, new QTableWidgetItem(checkIn.toString("dd.MM.yyyy")));
         reportTable->setItem(i, 1, new QTableWidgetItem(item["room_number"].toString()));
         reportTable->setItem(i, 2, new QTableWidgetItem(item["bed_number"].toString()));
-        reportTable->setItem(i, 3, new QTableWidgetItem(item["client_name"].toString()));
-        reportTable->setItem(i, 4, new QTableWidgetItem(QString::number(totalPrice, 'f', 2) + " руб."));
-        reportTable->setItem(i, 5, new QTableWidgetItem(QString::number(paid, 'f', 2) + " руб."));
-        reportTable->setItem(i, 6, new QTableWidgetItem(QString::number(balance, 'f', 2) + " руб."));
-        reportTable->setItem(i, 7, new QTableWidgetItem(item["payment_method"].toString()));
+        reportTable->setItem(i, 3, new QTableWidgetItem(bookingType));
+        reportTable->setItem(i, 4, new QTableWidgetItem(item["client_name"].toString()));
+        reportTable->setItem(i, 5, new QTableWidgetItem(QString::number(totalPrice, 'f', 2) + " руб."));
+        reportTable->setItem(i, 6, new QTableWidgetItem(QString::number(paid, 'f', 2) + " руб."));
+        reportTable->setItem(i, 7, new QTableWidgetItem(QString::number(balance, 'f', 2) + " руб."));
+        reportTable->setItem(i, 8, new QTableWidgetItem(item["payment_method"].toString()));
 
         // Раскрашиваем строку в зависимости от оплаты
         QColor rowColor;
         if (balance <= 0) {
-            // Полностью оплачено - зеленый
-            rowColor = QColor(200, 255, 200);
+            rowColor = QColor(200, 255, 200); // Зеленый - полностью оплачено
         } else if (paid > 0) {
-            // Частично оплачено - желтый
-            rowColor = QColor(255, 255, 200);
+            rowColor = QColor(255, 255, 200); // Желтый - частично оплачено
         } else {
-            // Не оплачено - красный
-            rowColor = QColor(255, 200, 200);
+            rowColor = QColor(255, 200, 200); // Красный - не оплачено
         }
 
-        for (int col = 0; col < 8; ++col) {
-            reportTable->item(i, col)->setBackground(rowColor);
+        for (int col = 0; col < 9; ++col) {
+            if (reportTable->item(i, col)) {
+                reportTable->item(i, col)->setBackground(rowColor);
+            }
         }
     }
 
