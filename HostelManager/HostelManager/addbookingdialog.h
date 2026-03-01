@@ -72,6 +72,8 @@ private:
     QDoubleSpinBox *paidSpin;
     QLabel *totalPriceLabel;
     QLabel *balanceLabel;
+    QLabel *daysValueLabel;
+    QLabel *pricePerDayValueLabel;
 
     // Новые элементы для выбора типа бронирования
     QRadioButton *placeRadio;
@@ -97,6 +99,7 @@ private:
     void populateRoomCombo();
     void populateBedCombo(int roomId);
     void updateBedComboVisibility(); // Новый метод для управления видимостью поля с койками
+    void updatePaymentInfoPanel();// Новый метод для обновления информационной панели
 
     // Вспомогательные методы для расчета цены
     double getRoomTotalPrice() const; // Общая стоимость для всей комнаты

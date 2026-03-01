@@ -185,6 +185,50 @@ void AddBookingDialog::setupUi()
     priceSpin->setSingleStep(100);
     formLayout->addRow(priceTitle, priceSpin);
 
+    // --- НОВАЯ ИНФОРМАЦИОННАЯ ПАНЕЛЬ О КОЛИЧЕСТВЕ СУТОК И СТОИМОСТИ КОЙКО-МЕСТА ---
+    // Создаем отдельный виджет с рамкой для информации о расчете
+    QGroupBox *infoGroup = new QGroupBox("Информация о расчете", this);
+    QVBoxLayout *infoLayout = new QVBoxLayout(infoGroup);
+
+    // Виджет для отображения информации о количестве суток
+    QWidget *daysInfoWidget = new QWidget(infoGroup);
+    QHBoxLayout *daysInfoLayout = new QHBoxLayout(daysInfoWidget);
+    daysInfoLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel *daysLabel = new QLabel("Количество суток:", infoGroup);
+    daysLabel->setStyleSheet("font-weight: bold;");
+    daysValueLabel = new QLabel("1", infoGroup);
+    daysValueLabel->setStyleSheet("font-weight: bold; color: #2E8B57;");
+    daysInfoLayout->addWidget(daysLabel);
+    daysInfoLayout->addWidget(daysValueLabel);
+    daysInfoLayout->addStretch();
+
+    // Виджет для отображения информации о стоимости за сутки
+    QWidget *priceInfoWidget = new QWidget(infoGroup);
+    QHBoxLayout *priceInfoLayout = new QHBoxLayout(priceInfoWidget);
+    priceInfoLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel *pricePerDayLabel = new QLabel("Стоимость койко-места за сутки:", infoGroup);
+    pricePerDayLabel->setStyleSheet("font-weight: bold;");
+    pricePerDayValueLabel = new QLabel("0.00 руб.", infoGroup);
+    pricePerDayValueLabel->setStyleSheet("font-weight: bold; color: #2E8B57;");
+    priceInfoLayout->addWidget(pricePerDayLabel);
+    priceInfoLayout->addWidget(pricePerDayValueLabel);
+    priceInfoLayout->addStretch();
+
+    // Добавляем информационные строки в группу
+    infoLayout->addWidget(daysInfoWidget);
+    infoLayout->addWidget(priceInfoWidget);
+
+    // Добавляем информационную группу перед секцией оплаты
+    formLayout->addRow("", infoGroup);
+
+    // Добавляем разделитель для визуального отделения
+    QFrame *separator = new QFrame(this);
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    formLayout->addRow("", separator);
+
     // --- Суммы ---
     paidSpin = new QDoubleSpinBox(this);
     paidSpin->setRange(0, 100000);
@@ -278,8 +322,9 @@ void AddBookingDialog::setupUi()
     // Блокируем кнопку добавления клиента, если БД не подключена
     addClientButton->setEnabled(database && database->isDatabaseConnected());
 
-    // Инициализируем отображение остатка
+    // Инициализируем отображение остатка и информационной панели
     updatePaidAmount();
+    updatePaymentInfoPanel(); // Новый метод для обновления информационной панели
 }
 
 // Новый слот для обработки изменения типа бронирования
@@ -294,6 +339,7 @@ void AddBookingDialog::onBookingTypeChanged()
     updateBedComboVisibility();
     updatePriceFromDatabase(); // Обновляем цену в соответствии с типом бронирования
     validateForm();
+    updatePaymentInfoPanel(); // Добавлено обновление информационной панели
 }
 
 // Метод для управления видимостью поля с койками
@@ -363,6 +409,7 @@ bool AddBookingDialog::isRoomAvailable() const
 
     return false;
 }
+
 // Новый метод для обновления оплаченной суммы и остатка
 void AddBookingDialog::updatePaidAmount()
 {
@@ -405,7 +452,9 @@ void AddBookingDialog::calculateTotalPrice()
     }
 
     updatePaidAmount();
+    updatePaymentInfoPanel(); // Добавлено обновление информационной панели
 }
+
 // Обновляем validateForm для проверки оплаченной суммы
 void AddBookingDialog::validateForm()
 {
@@ -697,8 +746,9 @@ void AddBookingDialog::updatePriceFromDatabase()
             priceSpin->setValue(totalRoomPrice);
         }
     }
-}
 
+    updatePaymentInfoPanel(); // Добавлено обновление информационной панели
+}
 // Вспомогательный метод для расчета общей стоимости комнаты
 double AddBookingDialog::getRoomTotalPrice() const
 {
@@ -1077,4 +1127,44 @@ void AddBookingDialog::setBookingType(BookingType type)
         wholeRoomRadio->setChecked(true);
     }
     onBookingTypeChanged();
+}
+
+// Новый метод для обновления информационной панели о количестве суток и стоимости за сутки
+void AddBookingDialog::updatePaymentInfoPanel()
+{
+    if (!daysValueLabel || !pricePerDayValueLabel) {
+        return;
+    }
+
+    QDate checkIn = checkInEdit->date();
+    QDate checkOut = checkOutEdit->date();
+    double pricePerDay = priceSpin->value();
+
+    if (checkIn.isValid() && checkOut.isValid() && checkOut > checkIn) {
+        int days = checkIn.daysTo(checkOut);
+        daysValueLabel->setText(QString::number(days));
+
+        // Обновляем текст в зависимости от типа бронирования
+        if (currentBookingType == Place) {
+            pricePerDayValueLabel->setText(QString("%1 руб.").arg(pricePerDay, 0, 'f', 2));
+
+            // Добавляем подсказку с деталями
+            pricePerDayValueLabel->setToolTip(QString("Стоимость за сутки: %1 руб.\nКоличество суток: %2\nИтого: %3 руб.")
+                                              .arg(pricePerDay, 0, 'f', 2)
+                                              .arg(days)
+                                              .arg(days * pricePerDay, 0, 'f', 2));
+        } else {
+            // Для бронирования комнаты целиком показываем общую стоимость всех коек
+            double totalRoomPricePerDay = getRoomTotalPrice();
+            pricePerDayValueLabel->setText(QString("%1 руб. (все койки)").arg(totalRoomPricePerDay, 0, 'f', 2));
+
+            pricePerDayValueLabel->setToolTip(QString("Суммарная стоимость всех коек в комнате за сутки: %1 руб.\nКоличество суток: %2\nОбщая стоимость: %3 руб.")
+                                              .arg(totalRoomPricePerDay, 0, 'f', 2)
+                                              .arg(days)
+                                              .arg(days * totalRoomPricePerDay, 0, 'f', 2));
+        }
+    } else {
+        daysValueLabel->setText("0");
+        pricePerDayValueLabel->setText("0.00 руб.");
+    }
 }

@@ -25,6 +25,12 @@ public:
                        double totalPrice, double paidAmount,
                        const QString &paymentMethod);
 
+    // Добавляем перегруженный метод для передачи дополнительной информации
+    void setBookingInfo(const QString &roomNumber, int bedNumber,
+                       const QDate &checkInDate, const QDate &checkOutDate,
+                       const QString &clientName, double totalPrice,
+                       double paidAmount, const QString &paymentMethod);
+
     double paidAmount() const;
     QString paymentMethod() const;
     QString notes() const;
@@ -45,7 +51,15 @@ private:
     QLineEdit *notesEdit;
     QLabel *balanceLabel;
 
+    // Новые элементы для отображения количества суток и стоимости за сутки
+    QLabel *daysCountLabel;
+    QLabel *pricePerDayLabel;
+
     double m_totalPrice;
+    QDate m_checkInDate;
+    QDate m_checkOutDate;
+
+    void updatePaymentInfo(); // Новый метод для обновления информации о платеже
 };
 
 #endif // EDITPAYMENTDIALOG_H

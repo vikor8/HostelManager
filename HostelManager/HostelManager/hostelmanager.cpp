@@ -2771,10 +2771,14 @@ void HostelManager::showEditPaymentDialog(const QVariantMap &bookingInfo,
     QString paymentMethod = bookingInfo["payment_method"].toString();
     QString clientName = bookingInfo["client_name"].toString();
 
-    // Показываем диалог редактирования оплаты
+    // Получаем даты заезда и выезда из информации о бронировании
+    QDate checkInDate = QDate::fromString(bookingInfo["check_in_date"].toString(), "yyyy-MM-dd");
+    QDate checkOutDate = QDate::fromString(bookingInfo["check_out_date"].toString(), "yyyy-MM-dd");
+
+    // Показываем диалог редактирования оплаты с полной информацией
     EditPaymentDialog dialog(this);
-    dialog.setBookingInfo(roomNumber, bedNumber, selectedDate, clientName,
-                         totalPrice, paidAmount, paymentMethod);
+    dialog.setBookingInfo(roomNumber, bedNumber, checkInDate, checkOutDate,
+                         clientName, totalPrice, paidAmount, paymentMethod);
 
     if (dialog.exec() == QDialog::Accepted) {
         double newPaidAmount = dialog.paidAmount();
@@ -2784,9 +2788,16 @@ void HostelManager::showEditPaymentDialog(const QVariantMap &bookingInfo,
         // Обновляем оплату в базе данных
         if (database->updatePayment(bookingId, newPaidAmount, newPaymentMethod)) {
             QMessageBox::information(this, "Успех",
-                QString("Оплата успешно обновлена!\n"
-                       "Новая сумма: %1 руб.\n"
-                       "Способ оплаты: %2")
+                QString("Оплата успешно обновлена!\n\n"
+                       "Период: %1 - %2\n"
+                       "Количество суток: %3\n"
+                       "Стоимость за сутки: %4 руб.\n"
+                       "Новая сумма оплаты: %5 руб.\n"
+                       "Способ оплаты: %6")
+                    .arg(checkInDate.toString("dd.MM.yyyy"))
+                    .arg(checkOutDate.toString("dd.MM.yyyy"))
+                    .arg(checkInDate.daysTo(checkOutDate))
+                    .arg(totalPrice / checkInDate.daysTo(checkOutDate), 0, 'f', 2)
                     .arg(newPaidAmount, 0, 'f', 2)
                     .arg(newPaymentMethod));
 
