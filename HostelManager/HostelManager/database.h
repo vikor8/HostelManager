@@ -10,6 +10,9 @@
 #include <QDate>
 #include <QColor>
 #include <QVariantMap>
+#include <QCoreApplication>
+#include <QSettings>
+#include <QFileInfo>
 
 class Database : public QObject
 {
@@ -88,6 +91,13 @@ public:
     bool addRoomBooking(int roomId, int clientId, const QDate& checkInDate,
                        const QDate& checkOutDate, double totalPrice,
                        double paidAmount = 0, const QString& paymentMethod = "Наличные");
+
+    bool setDatabasePath(const QString &path);
+        QString getDatabasePath() const;
+        bool reconnectDatabase(const QString &newPath);
+        static QString getDefaultDatabasePath(); // Для получения пути по умолчанию
+
+
 
 
 private:

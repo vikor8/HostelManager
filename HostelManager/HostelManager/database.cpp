@@ -904,3 +904,52 @@ bool Database::addRoomBooking(int roomId, int clientId, const QDate& checkInDate
         return false;
     }
 }
+
+// Добавьте статический метод для пути по умолчанию
+QString Database::getDefaultDatabasePath()
+{
+    return QCoreApplication::applicationDirPath() + "/BD_Kolcovo.sqlite";
+}
+
+// Метод для установки пути к БД
+bool Database::setDatabasePath(const QString &path)
+{
+    if (db.isOpen()) {
+        db.close();
+    }
+
+    databasePath = path;
+    return initializeDatabase();
+}
+
+// Геттер для пути к БД
+QString Database::getDatabasePath() const
+{
+    return databasePath;
+}
+
+// Метод для переподключения к другой БД
+bool Database::reconnectDatabase(const QString &newPath)
+{
+    // Закрываем текущее соединение
+    if (db.isOpen()) {
+        QString connectionName = db.connectionName();
+        db.close();
+        db = QSqlDatabase(); // Сбрасываем объект
+
+        // Удаляем старое соединение
+        QSqlDatabase::removeDatabase(connectionName);
+    }
+
+    // Создаем новое соединение с тем же именем
+    db = QSqlDatabase::addDatabase("QSQLITE");
+    db.setDatabaseName(newPath);
+
+    databasePath = newPath;
+
+    // Сохраняем путь в настройках приложения
+    QSettings settings("YourCompany", "HostelManager");
+    settings.setValue("Database/Path", newPath);
+
+    return initializeDatabase();
+}

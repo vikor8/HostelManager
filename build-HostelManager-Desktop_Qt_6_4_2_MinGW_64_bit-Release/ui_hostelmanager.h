@@ -10,6 +10,7 @@
 #define UI_HOSTELMANAGER_H
 
 #include <QtCore/QVariant>
+#include <QtGui/QIcon>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QDateEdit>
 #include <QtWidgets/QFrame>
@@ -60,6 +61,9 @@ public:
         if (HostelManager->objectName().isEmpty())
             HostelManager->setObjectName("HostelManager");
         HostelManager->resize(1300, 700);
+        QIcon icon;
+        icon.addFile(QString::fromUtf8(":/new/prefix1/Kolcovo.ico"), QSize(), QIcon::Normal, QIcon::Off);
+        HostelManager->setWindowIcon(icon);
         centralwidget = new QWidget(HostelManager);
         centralwidget->setObjectName("centralwidget");
         verticalLayout = new QVBoxLayout(centralwidget);

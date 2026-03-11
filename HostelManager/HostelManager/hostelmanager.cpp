@@ -6,6 +6,10 @@
 #include "addbookingdialog.h"
 #include "editpaymentdialog.h"
 
+
+#include <QSettings>
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QHeaderView>
@@ -54,8 +58,20 @@ HostelManager::HostelManager(QWidget *parent)
 
     qDebug() << "Конструктор HostelManager начал работу";
 
+    // Загружаем путь к базе данных из настроек
+    QSettings settings("YourCompany", "HostelManager");
+    QString savedDbPath = settings.value("Database/Path", "").toString();
+
+    if (!savedDbPath.isEmpty() && QFile::exists(savedDbPath)) {
+        // Используем сохраненный путь
+        database->reconnectDatabase(savedDbPath);
+    } else {
+        // Используем путь по умолчанию
+        database->reconnectDatabase(Database::getDefaultDatabasePath());
+    }
+
     // Инициализируем базу данных
-    initializeDatabase();
+    // initializeDatabase(); // Убираем, так как reconnectDatabase уже инициализирует
 
     // Создаем меню бар
     createMenuBar();
@@ -135,14 +151,9 @@ QColor HostelManager::getCategoryColor(const QString& category) const
 
 void HostelManager::initializeDatabase()
 {
-    if (database->initializeDatabase()) {
-        qDebug() << "База данных успешно инициализирована";
-        ui->lblStatus->setText("База данных: подключена");
-        updateRoomIdMap(); // Обновляем карту ID комнат
-        loadCategories(); // Загружаем категории
-    } else {
-        qDebug() << "Ошибка инициализации базы данных";
-        ui->lblStatus->setText("База данных: не подключена (демо-режим)");
+    if (database->isDatabaseConnected()) {
+           updateRoomIdMap();
+           loadCategories();
     }
 }
 
@@ -193,45 +204,88 @@ void HostelManager::createMenuBar()
     // Создаем меню "База данных"
     QMenu *databaseMenu = menuBar->addMenu("&База данных");
 
-    QAction *dbConnectAction = databaseMenu->addAction("&Подключить/переподключить");
-    dbConnectAction->setShortcut(Qt::CTRL | Qt::Key_D);
-    connect(dbConnectAction, &QAction::triggered, this, [this](){
-        if (database->initializeDatabase()) {
-            QMessageBox::information(this, "База данных", "База данных успешно подключена");
-            ui->lblStatus->setText("База данных: подключена");
+    // Новая кнопка "Выбрать базу данных"
+    QAction *dbSelectAction = databaseMenu->addAction("&Выбрать базу данных...");
+    dbSelectAction->setShortcut(Qt::CTRL | Qt::Key_O);
+    connect(dbSelectAction, &QAction::triggered, this, [this](){
+        // Предлагаем выбрать файл базы данных
+        QString fileName = QFileDialog::getOpenFileName(this,
+            "Выбрать базу данных",
+            QFileInfo(database->getDatabasePath()).absolutePath(), // Текущая директория
+            "SQLite Database (*.sqlite *.db);;Все файлы (*)");
+
+        if (fileName.isEmpty()) {
+            return; // Пользователь отменил выбор
+        }
+
+        // Проверяем, существует ли файл
+        if (!QFile::exists(fileName)) {
+            QMessageBox::warning(this, "Ошибка",
+                "Выбранный файл не существует или недоступен для чтения.");
+            return;
+        }
+
+        // Пытаемся подключиться к новой базе данных
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        bool success = database->reconnectDatabase(fileName);
+        QApplication::restoreOverrideCursor();
+
+        if (success) {
+            QMessageBox::information(this, "Успех",
+                QString("База данных успешно подключена:\n%1").arg(fileName));
+
+            // Обновляем интерфейс
+            ui->lblStatus->setText(QString("База данных: %1").arg(fileName));
             updateRoomIdMap();
             loadCategories();
             initializeTable();
+
         } else {
-            QMessageBox::warning(this, "Ошибка", "Не удалось подключиться к базе данных");
-            ui->lblStatus->setText("База данных: не подключена");
+            QMessageBox::critical(this, "Ошибка",
+                "Не удалось подключиться к выбранной базе данных.\n"
+                "Возможно, файл поврежден или имеет неверную структуру.");
+
+            // Пытаемся переподключиться к предыдущей базе
+            database->reconnectDatabase(Database::getDefaultDatabasePath());
         }
     });
 
+    // Разделитель
+    databaseMenu->addSeparator();
+
+    // Оставляем старую кнопку для резервной копии
     QAction *dbBackupAction = databaseMenu->addAction("&Создать резервную копию");
     dbBackupAction->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_B);
     connect(dbBackupAction, &QAction::triggered, this, [this](){
-        QString fileName = QFileDialog::getSaveFileName(this, "Создать резервную копию",
+        QString fileName = QFileDialog::getSaveFileName(this,
+            "Создать резервную копию",
             "BD_Kolcovo_backup_" + QDate::currentDate().toString("yyyy-MM-dd") + ".sqlite",
             "SQLite Database (*.sqlite)");
+
         if (!fileName.isEmpty()) {
-            if (QFile::copy("BD_Kolcovo.sqlite", fileName)) {
+            QString sourcePath = database->getDatabasePath();
+            if (QFile::copy(sourcePath, fileName)) {
                 QMessageBox::information(this, "Резервная копия",
-                                       "Резервная копия базы данных создана:\n" + fileName);
+                    "Резервная копия базы данных создана:\n" + fileName);
             } else {
-                QMessageBox::warning(this, "Ошибка", "Не удалось создать резервную копию");
+                QMessageBox::warning(this, "Ошибка",
+                    "Не удалось создать резервную копию.\n"
+                    "Проверьте права доступа к папке назначения.");
             }
         }
     });
 
     databaseMenu->addSeparator();
 
+    // Оставляем статистику
     QAction *dbStatsAction = databaseMenu->addAction("&Статистика базы");
     dbStatsAction->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_S);
     connect(dbStatsAction, &QAction::triggered, this, [this](){
         if (database->isDatabaseConnected()) {
             QSqlQuery query(database->getDatabase());
-            QString stats = "<html><body><h3>Статистика базы данных</h3><table width='100%'>";
+            QString stats = "<html><body><h3>Статистика базы данных</h3>";
+            stats += QString("<p>Файл: <b>%1</b></p>").arg(database->getDatabasePath());
+            stats += "<table width='100%'>";
 
             query.exec("SELECT COUNT(*) FROM rooms");
             if (query.next()) stats += "<tr><td>Комнат:</td><td><b>" + query.value(0).toString() + "</b></td></tr>";
@@ -254,6 +308,30 @@ void HostelManager::createMenuBar()
         } else {
             QMessageBox::warning(this, "Ошибка", "База данных не подключена");
         }
+    });
+
+    databaseMenu->addSeparator();
+
+    // Добавляем информацию о текущей базе данных
+    QAction *dbInfoAction = databaseMenu->addAction("&Информация о базе");
+    connect(dbInfoAction, &QAction::triggered, this, [this](){
+        QString path = database->getDatabasePath();
+        QFileInfo fileInfo(path);
+
+        QString info = QString(
+            "<html><body><h3>Информация о базе данных</h3>"
+            "<table>"
+            "<tr><td><b>Путь:</b></td><td>%1</td></tr>"
+            "<tr><td><b>Размер:</b></td><td>%2</td></tr>"
+            "<tr><td><b>Дата изменения:</b></td><td>%3</td></tr>"
+            "<tr><td><b>Статус:</b></td><td>%4</td></tr>"
+            "</table></body></html>")
+            .arg(path)
+            .arg(fileInfo.size() > 0 ? QString::number(fileInfo.size() / 1024.0, 'f', 2) + " KB" : "Неизвестно")
+            .arg(fileInfo.lastModified().toString("dd.MM.yyyy hh:mm:ss"))
+            .arg(database->isDatabaseConnected() ? "Подключена" : "Не подключена");
+
+        QMessageBox::information(this, "Информация о базе данных", info);
     });
 
     // Создаем меню "Комнаты"
@@ -544,10 +622,10 @@ void HostelManager::createMenuBar()
     connect(aboutAction, &QAction::triggered, this, [](){
         QMessageBox::about(nullptr, "О программе",
             "<h3>Hotel Manager - Система управления бронированиями</h3>"
-            "<p>Версия: 1.0.0</p>"
+            "<p>Версия: 1.0.1</p>"
             "<p>Разработано для управления хостелом</p>"
             "<p>База данных: SQLite (BD_Kolcovo.sqlite)</p>"
-            "<p>© 2024 Все права защищены</p>");
+            "<p>© 2026 Все права защищены</p>");
     });
 }
 
