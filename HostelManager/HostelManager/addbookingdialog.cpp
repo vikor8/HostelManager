@@ -853,8 +853,12 @@ bool AddBookingDialog::isBedAvailable() const
 
 void AddBookingDialog::setRoomAndBed(int roomId, int bedId)
 {
+    qDebug() << "setRoomAndBed called with roomId:" << roomId << "bedId:" << bedId;
+
     // Находим комнату в комбобоксе
     int roomIndex = roomCombo->findData(roomId);
+    qDebug() << "Room index:" << roomIndex << "roomId:" << roomId;
+
     if (roomIndex >= 0) {
         roomCombo->setCurrentIndex(roomIndex);
         loadBeds(); // Загружаем койки для этой комнаты
@@ -863,11 +867,23 @@ void AddBookingDialog::setRoomAndBed(int roomId, int bedId)
         QTimer::singleShot(100, [this, bedId]() {
             // Находим койку в комбобоксе
             int bedIndex = bedCombo->findData(bedId);
+            qDebug() << "Bed index:" << bedIndex << "bedId:" << bedId;
+
             if (bedIndex >= 0) {
                 bedCombo->setCurrentIndex(bedIndex);
                 updatePriceFromDatabase();
+            } else {
+                qDebug() << "Bed not found! Available beds in combo:";
+                for (int i = 0; i < bedCombo->count(); ++i) {
+                    qDebug() << "  - index:" << i << "data:" << bedCombo->itemData(i).toInt();
+                }
             }
         });
+    } else {
+        qDebug() << "Room not found! Available rooms in combo:";
+        for (int i = 0; i < roomCombo->count(); ++i) {
+            qDebug() << "  - index:" << i << "text:" << roomCombo->itemText(i) << "data:" << roomCombo->itemData(i).toInt();
+        }
     }
 }
 

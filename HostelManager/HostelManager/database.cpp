@@ -18,16 +18,13 @@ Database::~Database()
 bool Database::initializeDatabase()
 {
     try {
-        // Проверяем существование файла базы данных
         bool dbExists = QFile::exists(databasePath);
 
-        // Открываем базу данных
         if (!db.open()) {
             qDebug() << "Ошибка открытия базы данных:" << db.lastError().text();
             return false;
         }
 
-        // Если база данных не существовала, создаем таблицы
         if (!dbExists) {
             qDebug() << "Создание новой базы данных...";
             createTables();
@@ -37,6 +34,8 @@ bool Database::initializeDatabase()
             qDebug() << "База данных успешно создана и заполнена тестовыми данными";
         } else {
             qDebug() << "База данных успешно открыта";
+            // Обновляем схему существующей базы данных
+            updateDatabaseSchema();
         }
 
         return true;
@@ -105,9 +104,29 @@ void Database::createTables()
                    "total_price REAL NOT NULL,"
                    "paid_amount REAL DEFAULT 0,"
                    "payment_method TEXT DEFAULT 'Наличные',"
+                   "payment_date TIMESTAMP,"                    // НОВОЕ ПОЛЕ - дата оплаты
                    "status TEXT DEFAULT 'active',"
-                   "is_room_booking INTEGER DEFAULT 0,"     // 1 если это часть бронирования комнаты
-                   "room_booking_group INTEGER,"            // групповой идентификатор для связки бронирований одной комнаты
+                   "is_room_booking INTEGER DEFAULT 0,"
+                   "room_booking_group INTEGER,"
+                   "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                   "cancelled_at TIMESTAMP,"
+                   "FOREIGN KEY (bed_id) REFERENCES beds(id),"
+                   "FOREIGN KEY (client_id) REFERENCES clients(id)"
+                   ")");
+
+    query.exec("CREATE TABLE IF NOT EXISTS bookings ("
+                   "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                   "bed_id INTEGER NOT NULL,"
+                   "client_id INTEGER NOT NULL,"
+                   "check_in_date DATE NOT NULL,"
+                   "check_out_date DATE NOT NULL,"
+                   "total_price REAL NOT NULL,"
+                   "paid_amount REAL DEFAULT 0,"
+                   "payment_method TEXT DEFAULT 'Наличные',"
+                   "payment_date TIMESTAMP,"                    // НОВОЕ ПОЛЕ - дата оплаты
+                   "status TEXT DEFAULT 'active',"
+                   "is_room_booking INTEGER DEFAULT 0,"
+                   "room_booking_group INTEGER,"
                    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
                    "cancelled_at TIMESTAMP,"
                    "FOREIGN KEY (bed_id) REFERENCES beds(id),"
@@ -300,9 +319,14 @@ bool Database::addBooking(int bedId, int clientId, const QDate& checkInDate,
     }
 
     QSqlQuery query;
+    QDateTime now = QDateTime::currentDateTime();
+
+    // Если есть оплата, устанавливаем payment_date на текущую дату
+    QString paymentDateStr = (paidAmount > 0) ? now.toString("yyyy-MM-dd hh:mm:ss") : QString();
+
     query.prepare("INSERT INTO bookings (bed_id, client_id, check_in_date, check_out_date, "
-                 "total_price, paid_amount, payment_method, status) "
-                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'active')");
+                 "total_price, paid_amount, payment_method, payment_date, status) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')");
     query.addBindValue(bedId);
     query.addBindValue(clientId);
     query.addBindValue(checkInDate.toString("yyyy-MM-dd"));
@@ -310,6 +334,7 @@ bool Database::addBooking(int bedId, int clientId, const QDate& checkInDate,
     query.addBindValue(totalPrice);
     query.addBindValue(paidAmount);
     query.addBindValue(paymentMethod);
+    query.addBindValue(paymentDateStr.isEmpty() ? QVariant() : paymentDateStr);
 
     if (query.exec()) {
         qDebug() << "Бронирование успешно создано для койки" << bedId
@@ -350,6 +375,7 @@ bool Database::isBedAvailable(int bedId, const QDate& checkInDate, const QDate& 
         return false;
     }
 }
+
 // Метод для добавления категории
 bool Database::addCategory(const QString& categoryName, const QString& color)
 {
@@ -658,7 +684,7 @@ QVariantMap Database::getBookingInfoByDate(const QString& roomNumber, int bedNum
     QSqlQuery query;
     query.prepare("SELECT bk.id, bk.total_price, bk.paid_amount, bk.payment_method, "
                  "c.first_name || ' ' || c.last_name as client_name, "
-                 "bk.check_in_date, bk.check_out_date "
+                 "bk.check_in_date, bk.check_out_date, bk.payment_date "
                  "FROM bookings bk "
                  "JOIN beds b ON bk.bed_id = b.id "
                  "JOIN rooms r ON b.room_id = r.id "
@@ -679,24 +705,53 @@ QVariantMap Database::getBookingInfoByDate(const QString& roomNumber, int bedNum
         info["client_name"] = query.value(4);
         info["check_in_date"] = query.value(5);
         info["check_out_date"] = query.value(6);
+        info["payment_date"] = query.value(7);
     }
 
     return info;
 }
-
 bool Database::updatePayment(int bookingId, double paidAmount, const QString& paymentMethod)
 {
     QSqlQuery query;
+    QDateTime now = QDateTime::currentDateTime();
+
+    // Получаем текущую информацию о бронировании
+    QSqlQuery selectQuery;
+    selectQuery.prepare("SELECT paid_amount FROM bookings WHERE id = ?");
+    selectQuery.addBindValue(bookingId);
+
+    double oldPaidAmount = 0;
+    if (selectQuery.exec() && selectQuery.next()) {
+        oldPaidAmount = selectQuery.value(0).toDouble();
+    }
+
+    // Если оплата увеличилась, обновляем дату оплаты на текущую
+    bool paymentIncreased = (paidAmount > oldPaidAmount);
 
     if (paymentMethod.isEmpty()) {
-        query.prepare("UPDATE bookings SET paid_amount = ? WHERE id = ?");
-        query.addBindValue(paidAmount);
-        query.addBindValue(bookingId);
+        if (paymentIncreased) {
+            query.prepare("UPDATE bookings SET paid_amount = ?, payment_date = ? WHERE id = ?");
+            query.addBindValue(paidAmount);
+            query.addBindValue(now.toString("yyyy-MM-dd hh:mm:ss"));
+            query.addBindValue(bookingId);
+        } else {
+            query.prepare("UPDATE bookings SET paid_amount = ? WHERE id = ?");
+            query.addBindValue(paidAmount);
+            query.addBindValue(bookingId);
+        }
     } else {
-        query.prepare("UPDATE bookings SET paid_amount = ?, payment_method = ? WHERE id = ?");
-        query.addBindValue(paidAmount);
-        query.addBindValue(paymentMethod);
-        query.addBindValue(bookingId);
+        if (paymentIncreased) {
+            query.prepare("UPDATE bookings SET paid_amount = ?, payment_method = ?, payment_date = ? WHERE id = ?");
+            query.addBindValue(paidAmount);
+            query.addBindValue(paymentMethod);
+            query.addBindValue(now.toString("yyyy-MM-dd hh:mm:ss"));
+            query.addBindValue(bookingId);
+        } else {
+            query.prepare("UPDATE bookings SET paid_amount = ?, payment_method = ? WHERE id = ?");
+            query.addBindValue(paidAmount);
+            query.addBindValue(paymentMethod);
+            query.addBindValue(bookingId);
+        }
     }
 
     if (query.exec()) {
@@ -817,56 +872,49 @@ bool Database::removeBooking(int bookingId)
         return false;
     }
 }
+
 // Новый метод для бронирования всей комнаты
 bool Database::addRoomBooking(int roomId, int clientId, const QDate& checkInDate,
                              const QDate& checkOutDate, double totalPrice,
                              double paidAmount, const QString& paymentMethod)
 {
-    // Начинаем транзакцию
     QSqlDatabase::database().transaction();
+    QDateTime now = QDateTime::currentDateTime();
+    QString paymentDateStr = (paidAmount > 0) ? now.toString("yyyy-MM-dd hh:mm:ss") : QString();
 
     try {
-        // Получаем все активные койки в комнате
         QSqlQuery bedQuery(db);
         bedQuery.prepare("SELECT id, price_per_day FROM beds WHERE room_id = ? AND is_active = 1");
         bedQuery.addBindValue(roomId);
 
         if (!bedQuery.exec()) {
             QSqlDatabase::database().rollback();
-            qDebug() << "Ошибка получения коек:" << bedQuery.lastError().text();
             return false;
         }
 
         QList<int> bedIds;
         QList<double> bedPrices;
-        double calculatedTotal = 0;
 
         while (bedQuery.next()) {
             bedIds.append(bedQuery.value(0).toInt());
             bedPrices.append(bedQuery.value(1).toDouble());
-            calculatedTotal += bedQuery.value(1).toDouble() * checkInDate.daysTo(checkOutDate);
         }
 
         if (bedIds.isEmpty()) {
             QSqlDatabase::database().rollback();
-            qDebug() << "В комнате нет активных коек";
             return false;
         }
 
-        // Проверяем доступность всех коек
         for (int bedId : bedIds) {
             if (!isBedAvailable(bedId, checkInDate, checkOutDate)) {
                 QSqlDatabase::database().rollback();
-                qDebug() << "Койка" << bedId << "недоступна на указанные даты";
                 return false;
             }
         }
 
-        // Рассчитываем пропорциональную оплату для каждой койки
         double paidPerBed = paidAmount / bedIds.size();
-        double pricePerDayPerBed = calculatedTotal / (checkInDate.daysTo(checkOutDate) * bedIds.size());
+        int groupId = QDateTime::currentMSecsSinceEpoch();
 
-        // Создаем бронирования для каждой койки
         for (int i = 0; i < bedIds.size(); ++i) {
             int bedId = bedIds[i];
             double bedTotalPrice = bedPrices[i] * checkInDate.daysTo(checkOutDate);
@@ -874,8 +922,8 @@ bool Database::addRoomBooking(int roomId, int clientId, const QDate& checkInDate
 
             QSqlQuery insertQuery(db);
             insertQuery.prepare("INSERT INTO bookings (bed_id, client_id, check_in_date, check_out_date, "
-                               "total_price, paid_amount, payment_method, status, is_room_booking, room_booking_group) "
-                               "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 1, ?)");
+                               "total_price, paid_amount, payment_method, payment_date, status, is_room_booking, room_booking_group) "
+                               "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?)");
 
             insertQuery.addBindValue(bedId);
             insertQuery.addBindValue(clientId);
@@ -884,18 +932,16 @@ bool Database::addRoomBooking(int roomId, int clientId, const QDate& checkInDate
             insertQuery.addBindValue(bedTotalPrice);
             insertQuery.addBindValue(bedPaidAmount);
             insertQuery.addBindValue(paymentMethod);
-            insertQuery.addBindValue(QDateTime::currentMSecsSinceEpoch()); // Групповой идентификатор
+            insertQuery.addBindValue(paymentDateStr.isEmpty() ? QVariant() : paymentDateStr);
+            insertQuery.addBindValue(groupId);
 
             if (!insertQuery.exec()) {
                 QSqlDatabase::database().rollback();
-                qDebug() << "Ошибка создания бронирования для койки" << bedId << ":" << insertQuery.lastError().text();
                 return false;
             }
         }
 
-        // Фиксируем транзакцию
         QSqlDatabase::database().commit();
-        qDebug() << "Успешно создано" << bedIds.size() << "бронирований для комнаты" << roomId;
         return true;
 
     } catch (const std::exception& e) {
@@ -952,4 +998,71 @@ bool Database::reconnectDatabase(const QString &newPath)
     settings.setValue("Database/Path", newPath);
 
     return initializeDatabase();
+}
+
+// Метод для обновления существующей базы данных
+void Database::updateDatabaseSchema()
+{
+    QSqlQuery query;
+
+    // Проверяем, существует ли поле payment_date в таблице bookings
+    query.exec("PRAGMA table_info(bookings)");
+    bool hasPaymentDate = false;
+    while (query.next()) {
+        if (query.value(1).toString() == "payment_date") {
+            hasPaymentDate = true;
+            break;
+        }
+    }
+
+    // Если поля нет, добавляем его
+    if (!hasPaymentDate) {
+        qDebug() << "Обновление схемы базы данных: добавляем поле payment_date в таблицу bookings";
+
+        // Добавляем поле payment_date
+        if (query.exec("ALTER TABLE bookings ADD COLUMN payment_date TIMESTAMP")) {
+            qDebug() << "Поле payment_date успешно добавлено";
+
+            // Инициализируем payment_date значением created_at для существующих записей с оплатой
+            QSqlQuery updateQuery;
+            if (updateQuery.exec("UPDATE bookings SET payment_date = created_at WHERE paid_amount > 0 AND payment_date IS NULL")) {
+                int affectedRows = updateQuery.numRowsAffected();
+                qDebug() << "Обновлено" << affectedRows << "записей: payment_date = created_at";
+            }
+        } else {
+            qDebug() << "Ошибка добавления поля payment_date:" << query.lastError().text();
+        }
+    } else {
+        qDebug() << "Поле payment_date уже существует в таблице bookings";
+    }
+
+    // Проверяем, есть ли поле is_room_booking (должно быть, но на всякий случай)
+    query.exec("PRAGMA table_info(bookings)");
+    bool hasIsRoomBooking = false;
+    while (query.next()) {
+        if (query.value(1).toString() == "is_room_booking") {
+            hasIsRoomBooking = true;
+            break;
+        }
+    }
+
+    if (!hasIsRoomBooking) {
+        qDebug() << "Добавляем поле is_room_booking в таблицу bookings";
+        query.exec("ALTER TABLE bookings ADD COLUMN is_room_booking INTEGER DEFAULT 0");
+    }
+
+    // Проверяем, есть ли поле room_booking_group
+    query.exec("PRAGMA table_info(bookings)");
+    bool hasRoomBookingGroup = false;
+    while (query.next()) {
+        if (query.value(1).toString() == "room_booking_group") {
+            hasRoomBookingGroup = true;
+            break;
+        }
+    }
+
+    if (!hasRoomBookingGroup) {
+        qDebug() << "Добавляем поле room_booking_group в таблицу bookings";
+        query.exec("ALTER TABLE bookings ADD COLUMN room_booking_group INTEGER");
+    }
 }

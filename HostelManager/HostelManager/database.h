@@ -97,6 +97,7 @@ public:
         bool reconnectDatabase(const QString &newPath);
         static QString getDefaultDatabasePath(); // Для получения пути по умолчанию
 
+        void updateDatabaseSchema();
 
 
 

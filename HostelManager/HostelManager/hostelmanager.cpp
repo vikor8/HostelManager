@@ -162,13 +162,16 @@ void HostelManager::updateRoomIdMap()
     roomIdMap.clear();
     if (database->isDatabaseConnected()) {
         QSqlQuery query(database->getDatabase());
-        query.exec("SELECT id, room_number FROM rooms");
-        while (query.next()) {
-            int roomId = query.value(0).toInt();
-            QString roomNumber = query.value(1).toString();
-            roomIdMap.insert(roomNumber, roomId);
+        if (query.exec("SELECT id, room_number FROM rooms")) {
+            while (query.next()) {
+                int roomId = query.value(0).toInt();
+                QString roomNumber = query.value(1).toString();
+                roomIdMap.insert(roomNumber, roomId);
+            }
+            qDebug() << "Карта ID комнат обновлена, количество:" << roomIdMap.size();
+        } else {
+            qDebug() << "Ошибка при загрузке комнат:" << query.lastError().text();
         }
-        qDebug() << "Карта ID комнат обновлена, количество:" << roomIdMap.size();
     }
 }
 
@@ -2642,34 +2645,48 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
         return;
     }
 
-    // Получаем ID комнаты
-    int roomId = roomIdMap.value(roomNumber, -1);
+    // Получаем ID комнаты через SQL запрос напрямую
+    int roomId = -1;
+    QSqlQuery roomQuery(database->getDatabase());
+    roomQuery.prepare("SELECT id FROM rooms WHERE room_number = ?");
+    roomQuery.addBindValue(roomNumber);
+
+    if (roomQuery.exec() && roomQuery.next()) {
+        roomId = roomQuery.value(0).toInt();
+    }
+
     if (roomId <= 0) {
         qDebug() << "Не найден ID комнаты для:" << roomNumber;
-        QMessageBox::warning(this, "Ошибка", "Не удалось определить комнату");
+        QMessageBox::warning(this, "Ошибка",
+            QString("Не удалось определить комнату '%1' в базе данных.\n"
+                   "Возможно, комната была удалена или изменился номер.")
+                .arg(roomNumber));
         return;
     }
 
     // Получаем ID койки
     int bedId = -1;
-    QSqlQuery query(database->getDatabase());
-    query.prepare("SELECT b.id FROM beds b "
-                  "JOIN rooms r ON b.room_id = r.id "
-                  "WHERE r.room_number = ? AND b.bed_number = ? AND b.is_active = 1");
-    query.addBindValue(roomNumber);
-    query.addBindValue(bedNumber);
+    QSqlQuery bedQuery(database->getDatabase());
+    bedQuery.prepare("SELECT b.id FROM beds b "
+                    "WHERE b.room_id = ? AND b.bed_number = ? AND b.is_active = 1");
+    bedQuery.addBindValue(roomId);
+    bedQuery.addBindValue(bedNumber);
 
-    if (query.exec() && query.next()) {
-        bedId = query.value(0).toInt();
+    if (bedQuery.exec() && bedQuery.next()) {
+        bedId = bedQuery.value(0).toInt();
     } else {
         qDebug() << "Не найден ID койки для:" << roomNumber << bedNumber;
-        QMessageBox::warning(this, "Ошибка", "Не удалось определить койку");
+        QMessageBox::warning(this, "Ошибка",
+            QString("Не удалось определить койку %1 в комнате %2.\n"
+                   "Возможно, койка была удалена или деактивирована.")
+                .arg(bedNumber)
+                .arg(roomNumber));
         return;
     }
 
     // Проверяем, есть ли уже активные бронирования в этой комнате на выбранную дату
     QSqlQuery checkRoomQuery(database->getDatabase());
-    checkRoomQuery.prepare("SELECT COUNT(DISTINCT is_room_booking) FROM bookings bk "
+    checkRoomQuery.prepare("SELECT COUNT(*) FROM bookings bk "
                           "JOIN beds b ON bk.bed_id = b.id "
                           "WHERE b.room_id = ? "
                           "AND bk.status = 'active' "
@@ -2678,13 +2695,11 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
     checkRoomQuery.addBindValue(startDate.toString("yyyy-MM-dd"));
 
     bool roomHasBookings = false;
-    bool roomHasWholeRoomBooking = false;
-
     if (checkRoomQuery.exec() && checkRoomQuery.next()) {
         roomHasBookings = checkRoomQuery.value(0).toInt() > 0;
     }
 
-    // Проверяем, есть ли бронирование комнаты целиком
+    bool roomHasWholeRoomBooking = false;
     if (roomHasBookings) {
         QSqlQuery checkWholeRoomQuery(database->getDatabase());
         checkWholeRoomQuery.prepare("SELECT COUNT(*) FROM bookings bk "
@@ -2739,11 +2754,9 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
             QMessageBox::No);
 
         if (result == QMessageBox::Yes) {
-            // Выбираем режим "Комната целиком"
-            // Примечание: нужно добавить метод для установки типа бронирования в AddBookingDialog
-            // bookingDialog->setBookingType(AddBookingDialog::WholeRoom);
+            // Устанавливаем тип бронирования "Комната целиком"
+            bookingDialog->setBookingType(AddBookingDialog::WholeRoom);
 
-            // Показываем информационное сообщение
             QMessageBox::information(this, "Бронирование комнаты",
                 "Будет создано бронирование для всех свободных коек в комнате.\n"
                 "Цена будет рассчитана как сумма цен всех коек.");
@@ -2837,7 +2850,6 @@ void HostelManager::openBookingDialogForCell(const QString &roomNumber,
 
     bookingDialog->deleteLater();
 }
-
 void HostelManager::showEditPaymentDialog(const QVariantMap &bookingInfo,
                                          const QString &roomNumber,
                                          int bedNumber,
