@@ -204,7 +204,7 @@ void ReportWindow::generateSummaryReport()
 
     QSqlQuery query(database->getDatabase());
 
-    // Получаем все бронирования
+    // 1. Получаем все бронирования с информацией о комнатах и категориях
     query.prepare("SELECT "
                   "bk.id, "
                   "bk.check_in_date, "
@@ -258,7 +258,6 @@ void ReportWindow::generateSummaryReport()
 
     QList<BookingItem> bookings;
     QMap<QString, CategoryStats> categoryStats;
-    QMap<QString, double> paymentsByMethod;
 
     if (query.exec()) {
         while (query.next()) {
@@ -321,7 +320,7 @@ void ReportWindow::generateSummaryReport()
         }
     }
 
-    // Оплаты за период
+    // 2. Оплаты за период
     query.prepare("SELECT "
                   "payment_method, "
                   "SUM(paid_amount) as paid_by_method "
@@ -334,16 +333,20 @@ void ReportWindow::generateSummaryReport()
     query.addBindValue(startDate.toString("yyyy-MM-dd"));
     query.addBindValue(endDate.toString("yyyy-MM-dd"));
 
+    QMap<QString, double> paymentsByMethod;
+    double totalPaidInPeriod = 0;
+
     if (query.exec()) {
         while (query.next()) {
             QString method = query.value(0).toString();
             double amount = query.value(1).toDouble();
             paymentsByMethod[method] = amount;
+            totalPaidInPeriod += amount;
             paidAmount += amount;
         }
     }
 
-    // Обновляем оплаты по категориям
+    // 3. Обновляем оплаты по категориям
     for (const auto& booking : bookings) {
         if (booking.paymentDate.isValid() &&
             booking.paymentDate.date() >= startDate &&
@@ -355,7 +358,7 @@ void ReportWindow::generateSummaryReport()
         categoryStats[booking.category].unpaid += booking.unpaidInPeriod;
     }
 
-    // Занятость мест
+    // 4. Занятость мест
     int occupiedBeds = 0;
     int totalBeds = 0;
 
@@ -372,7 +375,7 @@ void ReportWindow::generateSummaryReport()
         totalBeds = query.value(0).toInt();
     }
 
-    // Заполняем таблицу
+    // 5. Заполняем таблицу детализации
     reportTable->clear();
     reportTable->setRowCount(0);
     reportTable->setColumnCount(13);
@@ -416,6 +419,7 @@ void ReportWindow::generateSummaryReport()
         reportTable->setItem(row, 11, new QTableWidgetItem(QString::number(booking.unpaidInPeriod, 'f', 2) + " руб."));
         reportTable->setItem(row, 12, new QTableWidgetItem(paymentDateStr));
 
+        // Цветовая индикация
         QColor rowColor;
         if (booking.unpaidInPeriod <= 0) {
             rowColor = QColor(200, 255, 200);
@@ -435,7 +439,7 @@ void ReportWindow::generateSummaryReport()
     reportTable->resizeColumnsToContents();
     reportTable->horizontalHeader()->setStretchLastSection(true);
 
-    // Формируем HTML отчет
+    // 6. Формируем HTML отчет
     QString html;
     html += "<!DOCTYPE html>\n";
     html += "<html>\n";
@@ -464,78 +468,68 @@ void ReportWindow::generateSummaryReport()
 
     // 1. Общие показатели
     html += "<h3>1. Общие показатели:</h3>\n";
-    html += "<table>\n";
-    html += " <tr><th>Показатель</th><th>Значение</th></tr>\n";
-    html += QString(" <tr><td>Количество бронирований (пересекающихся с периодом)</td><td align='right'>%1</td></tr>\n").arg(totalBookings);
-    html += QString(" <tr><td>Общая стоимость бронирований (только дни в периоде)</td><td align='right'>%1 руб.</td></tr>\n").arg(totalRevenue, 0, 'f', 2);
-    html += QString(" <tr><td>Полученная оплата (в период %1 - %2)</td><td align='right'>%3 руб.</td></tr>\n")
+    html += "点的\n";
+    html += "  <tr><th>Показатель</th><th>Значение</th> </tr>\n";
+    html += QString("   <tr><td>Количество бронирований (пересекающихся с периодом)</td><td align='right'>%1</td></tr>\n").arg(totalBookings);
+    html += QString("   <tr><td>Общая стоимость бронирований (только дни в периоде)</td><td align='right'>%1 руб.</td></tr>\n").arg(totalRevenue, 0, 'f', 2);
+    html += QString("   <tr><td>Полученная оплата (в период %1 - %2)</td><td align='right'>%3 руб.</td></tr>\n")
             .arg(startDate.toString("dd.MM.yyyy"))
             .arg(endDate.toString("dd.MM.yyyy"))
             .arg(paidAmount, 0, 'f', 2);
-    html += QString(" <tr><td><b>Задолженность за период</b> (неоплаченные дни в периоде)</td><td align='right'><b>%1 руб.</b></td></tr>\n").arg(unpaidAmount, 0, 'f', 2);
+    html += QString("   <tr><td><b>Задолженность за период</b> (неоплаченные дни в периоде)</td><td align='right'><b>%1 руб.</b></td></tr>\n").arg(unpaidAmount, 0, 'f', 2);
     double paymentPercent = totalRevenue > 0 ? ((totalRevenue - unpaidAmount) / totalRevenue) * 100 : 0;
-    html += QString(" <tr><td>Процент оплаты от общей стоимости</td><td align='right'>%1%</td></tr>\n").arg(paymentPercent, 0, 'f', 1);
+    html += QString("   <tr><td>Процент оплаты от общей стоимости</td><td align='right'>%1%</td></tr>\n").arg(paymentPercent, 0, 'f', 1);
     html += "</table>\n";
 
-    // Примечание
-    html += "<div class='note'>\n";
-    html += "<i>Примечание:<br>\n";
-    html += "• В графе \"Общая стоимость бронирований\" учитывается стоимость ТОЛЬКО тех дней, которые попадают в выбранный период.<br>\n";
-    html += "• Если бронирование частично выходит за пределы периода, учитывается только пропорциональная часть стоимости.<br>\n";
-    html += "• <b>Задолженность за период</b> рассчитывается следующим образом:<br>\n";
-    html += "&nbsp;&nbsp;- Если бронирование оплачено полностью, задолженность = 0<br>\n";
-    html += "&nbsp;&nbsp;- Если бронирование оплачено частично, определяется количество полностью оплаченных суток, и задолженность начисляется только за неоплаченные сутки, попадающие в отчетный период<br>\n";
-    html += "&nbsp;&nbsp;- Если бронирование не оплачено, задолженность = стоимость всех дней в периоде<br>\n";
-    html += "• В графе \"Полученная оплата\" учитываются только платежи, произведенные в выбранный период (по дате оплаты).\n";
-    html += "</i>\n";
-    html += "</div>\n";
-
-    // 2. Занятость мест
-    double occupancyRate = totalBeds > 0 ? (occupiedBeds * 100.0 / totalBeds) : 0;
-    html += "<h3>2. Занятость мест (на " + endDate.toString("dd.MM.yyyy") + "):</h3>\n";
-    html += "<table>\n";
-    html += " <tr><th>Показатель</th><th>Значение</th></tr>\n";
-    html += QString(" <tr><td>Всего мест</td><td align='right'>%1</td></tr>\n").arg(totalBeds);
-    html += QString(" <tr><td>Занято мест</td><td align='right'>%1</td></tr>\n").arg(occupiedBeds);
-    html += QString(" <tr><td>Свободно мест</td><td align='right'>%1</td></tr>\n").arg(totalBeds - occupiedBeds);
-    html += QString(" <tr><td>Процент загрузки</td><td align='right'>%1%</td></tr>\n").arg(occupancyRate, 0, 'f', 1);
-    html += "</table>\n";
-
-    // 3. Распределение оплаты по способам
+    // 2. Распределение оплаты по способам
     if (!paymentsByMethod.isEmpty()) {
-        html += "<h3>3. Распределение оплаты по способам (за период):</h3>\n";
+        html += "<h3>2. Распределение оплаты по способам (за период):</h3>\n";
         html += "<table>\n";
-        html += " <tr><th>Способ оплаты</th><th>Сумма</th><th>Доля</th></tr>\n";
-
-        double totalPaid = 0;
-        for (auto it = paymentsByMethod.begin(); it != paymentsByMethod.end(); ++it) {
-            totalPaid += it.value();
-        }
+        html += "   <tr><th>Способ оплаты</th><th>Сумма</th><th>Доля</th></tr>\n";
 
         for (auto it = paymentsByMethod.begin(); it != paymentsByMethod.end(); ++it) {
             QString method = it.key();
             double amount = it.value();
-            double percentage = totalPaid > 0 ? (amount * 100 / totalPaid) : 0;
+            double percentage = totalPaidInPeriod > 0 ? (amount * 100 / totalPaidInPeriod) : 0;
 
-            html += QString(" <tr><td>%1</td><td align='right'>%2 руб.</td><td align='right'>%3%</td></tr>\n")
-                    .arg(method)
-                    .arg(amount, 0, 'f', 2)
-                    .arg(percentage, 0, 'f', 1);
+            html += QString("   <tr>"
+                           "<td>%1</td>"
+                           "<td align='right'>%2 руб.</td>"
+                           "<td align='right'>%3%</td>"
+                           "</tr>\n")
+                           .arg(method)
+                           .arg(amount, 0, 'f', 2)
+                           .arg(percentage, 0, 'f', 1);
         }
 
         html += QString(" <tr style='font-weight: bold; background-color: #f0f0f0;'>"
                        "<td>ИТОГО ОПЛАЧЕНО ЗА ПЕРИОД:</td>"
                        "<td align='right'>%1 руб.</td>"
-                       "<td align='right'>100%</td></tr>\n")
-                       .arg(totalPaid, 0, 'f', 2);
+                       "<td align='right'>100%</td>"
+                       "</tr>\n")
+                       .arg(totalPaidInPeriod, 0, 'f', 2);
         html += "</table>\n";
+    } else {
+        html += "<h3>2. Распределение оплаты по способам (за период):</h3>\n";
+        html += "<p>За выбранный период не было произведено ни одного платежа.</p>\n";
     }
+
+    // 3. Занятость мест
+    double occupancyRate = totalBeds > 0 ? (occupiedBeds * 100.0 / totalBeds) : 0;
+    html += "<h3>3. Занятость мест (на " + endDate.toString("dd.MM.yyyy") + "):</h3>\n";
+    html += "<table>\n";
+    html += "   <tr><th>Показатель</th><th>Значение</th></tr>\n";
+    html += QString("   <tr><td>Всего мест</td><td align='right'>%1</td></tr>\n").arg(totalBeds);
+    html += QString("   <tr><td>Занято мест</td><td align='right'>%1</td></tr>\n").arg(occupiedBeds);
+    html += QString("   <tr><td>Свободно мест</td><td align='right'>%1</td></tr>\n").arg(totalBeds - occupiedBeds);
+    html += QString("   <tr><td>Процент загрузки</td><td align='right'>%1%</td></tr>\n").arg(occupancyRate, 0, 'f', 1);
+    html += "</table>\n";
 
     // 4. Статистика по категориям
     if (!categoryStats.isEmpty()) {
         html += "<h3>4. Статистика по категориям номеров (только дни в периоде):</h3>\n";
         html += "<table>\n";
-        html += " <tr><th>Категория</th><th>Броней</th><th>Выручка за период</th><th>Оплачено за период</th><th>Задолженность</th><th>% оплаты</th></tr>\n";
+        html += "   <tr><th>Категория</th><th>Броней</th><th>Выручка за период</th><th>Оплачено за период</th><th>Задолженность</th><th>% оплаты</th></tr>\n";
 
         for (auto it = categoryStats.begin(); it != categoryStats.end(); ++it) {
             QString category = it.key();
@@ -545,7 +539,7 @@ void ReportWindow::generateSummaryReport()
             double unpaid = it.value().unpaid;
             double paymentRate = revenue > 0 ? ((revenue - unpaid) * 100 / revenue) : 0;
 
-            html += QString(" <tr>"
+            html += QString("   <tr>"
                            "<td>%1</td>"
                            "<td align='right'>%2</td>"
                            "<td align='right'>%3 руб.</td>"
@@ -562,6 +556,19 @@ void ReportWindow::generateSummaryReport()
         }
         html += "</table>\n";
     }
+
+    // Примечание
+    html += "<div class='note'>\n";
+    html += "<i>Примечание:<br>\n";
+    html += "• В графе \"Общая стоимость бронирований\" учитывается стоимость ТОЛЬКО тех дней, которые попадают в выбранный период.<br>\n";
+    html += "• Если бронирование частично выходит за пределы периода, учитывается только пропорциональная часть стоимости.<br>\n";
+    html += "• <b>Задолженность за период</b> рассчитывается следующим образом:<br>\n";
+    html += "&nbsp;&nbsp;- Если бронирование оплачено полностью, задолженность = 0<br>\n";
+    html += "&nbsp;&nbsp;- Если бронирование оплачено частично, определяется количество полностью оплаченных суток, и задолженность начисляется только за неоплаченные сутки, попадающие в отчетный период<br>\n";
+    html += "&nbsp;&nbsp;- Если бронирование не оплачено, задолженность = стоимость всех дней в периоде<br>\n";
+    html += "• В графе \"Полученная оплата\" учитываются только платежи, произведенные в выбранный период (по дате оплаты).<br>\n";
+    html += "• В таблице \"Распределение оплаты по способам\" отображаются все способы оплаты, использованные в выбранный период.</i>\n";
+    html += "</div>\n";
 
     // Подвал
     html += "<div class='footer'>\n";

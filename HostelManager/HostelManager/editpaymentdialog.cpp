@@ -28,7 +28,7 @@ void EditPaymentDialog::setupUi()
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-    // Группа с информацией о бронировании (теперь со всей информацией)
+    // Группа с информацией о бронировании
     QGroupBox *infoGroup = new QGroupBox("Информация о бронировании", this);
     QFormLayout *infoLayout = new QFormLayout(infoGroup);
 
@@ -37,12 +37,9 @@ void EditPaymentDialog::setupUi()
     dateLabel = new QLabel(this);
     clientLabel = new QLabel(this);
     totalPriceLabel = new QLabel(this);
-
-    // Новые поля для количества суток и стоимости за сутки
     daysCountLabel = new QLabel(this);
     pricePerDayLabel = new QLabel(this);
 
-    // Стили для выделения информации
     daysCountLabel->setStyleSheet("font-weight: bold; color: #2E8B57;");
     pricePerDayLabel->setStyleSheet("font-weight: bold; color: #2E8B57;");
 
@@ -74,7 +71,8 @@ void EditPaymentDialog::setupUi()
     paidSpin->setButtonSymbols(QDoubleSpinBox::UpDownArrows);
 
     paymentCombo = new QComboBox(this);
-    paymentCombo->addItems({"Наличные", "Безнал", "Перевод", "На р/с юрлица", "Карта", "Другое"});
+    // Убираем "Другое" из списка способов оплаты
+    paymentCombo->addItems({"Наличные", "Безнал", "Перевод", "На р/с юрлица", "Карта"});
 
     notesEdit = new QLineEdit(this);
     notesEdit->setPlaceholderText("Примечание к оплате...");
@@ -102,7 +100,6 @@ void EditPaymentDialog::setupUi()
     connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
-    // Обновляем баланс при инициализации
     updateBalance();
 }
 

@@ -248,32 +248,33 @@ void AddBookingDialog::setupUi()
 
     // --- Способы оплаты ---
     QLabel *paymentTitle = new QLabel("Способ оплаты:", this);
-    paymentTitle->setStyleSheet("font-weight: bold;");
+        paymentTitle->setStyleSheet("font-weight: bold;");
 
-    QWidget *paymentWidget = new QWidget(this);
-    QHBoxLayout *paymentLayout = new QHBoxLayout(paymentWidget);
-    paymentLayout->setContentsMargins(0, 0, 0, 0);
+        QWidget *paymentWidget = new QWidget(this);
+        QHBoxLayout *paymentLayout = new QHBoxLayout(paymentWidget);
+        paymentLayout->setContentsMargins(0, 0, 0, 0);
 
-    cashRadio = new QRadioButton("Наличные", paymentWidget);
-    cardRadio = new QRadioButton("Безнал", paymentWidget);
-    transferRadio = new QRadioButton("Перевод", paymentWidget);
-    legalEntityRadio = new QRadioButton("На р/с юрлица", paymentWidget); // Новый способ оплаты
+        cashRadio = new QRadioButton("Наличные", paymentWidget);
+        cardRadio = new QRadioButton("Безнал", paymentWidget);
+        transferRadio = new QRadioButton("Перевод", paymentWidget);
+        legalEntityRadio = new QRadioButton("На р/с юрлица", paymentWidget);
+        // Убираем radioButton для "Другое"
 
-    paymentGroup = new QButtonGroup(this);
-    paymentGroup->addButton(cashRadio);
-    paymentGroup->addButton(cardRadio);
-    paymentGroup->addButton(transferRadio);
-    paymentGroup->addButton(legalEntityRadio);
+        paymentGroup = new QButtonGroup(this);
+        paymentGroup->addButton(cashRadio);
+        paymentGroup->addButton(cardRadio);
+        paymentGroup->addButton(transferRadio);
+        paymentGroup->addButton(legalEntityRadio);
 
-    cashRadio->setChecked(true); // По умолчанию "Наличные"
+        cashRadio->setChecked(true);
 
-    paymentLayout->addWidget(cashRadio);
-    paymentLayout->addWidget(cardRadio);
-    paymentLayout->addWidget(transferRadio);
-    paymentLayout->addWidget(legalEntityRadio);
-    paymentLayout->addStretch();
+        paymentLayout->addWidget(cashRadio);
+        paymentLayout->addWidget(cardRadio);
+        paymentLayout->addWidget(transferRadio);
+        paymentLayout->addWidget(legalEntityRadio);
+        paymentLayout->addStretch();
 
-    formLayout->addRow(paymentTitle, paymentWidget);
+        formLayout->addRow(paymentTitle, paymentWidget);
 
     // --- Подсказка об обязательных полях ---
     QLabel *requiredLabel = new QLabel("* - обязательные поля", this);
