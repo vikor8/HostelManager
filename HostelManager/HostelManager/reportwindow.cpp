@@ -32,6 +32,35 @@
 #include <QPageSize>
 #include <QPageLayout>
 
+// Структура для хранения данных бронирования
+struct BookingData {
+    int id;
+    QDate checkIn;
+    QDate checkOut;
+    double totalPrice;
+    double pricePerDay;
+    int totalDays;
+    int daysInPeriod;
+    double revenueInPeriod;
+    double paidAmount;
+    QString paymentMethod;
+    QDateTime paymentDate;
+    bool isRoomBooking;
+    int roomBookingGroup;
+    QString roomNumber;
+    int bedNumber;
+    QString clientName;
+};
+
+// Структура для статистики по категориям
+struct CategoryStats {
+    int bookingsCount;
+    double revenue;
+    double paid;
+
+    CategoryStats() : bookingsCount(0), revenue(0), paid(0) {}
+};
+
 ReportWindow::ReportWindow(Database *db, QWidget *parent)
     : QMainWindow(parent)
     , database(db)
@@ -161,27 +190,81 @@ void ReportWindow::generateSummaryReport()
         return;
     }
 
-    double totalRevenue = 0;
-    double paidAmount = 0;
-    double unpaidAmount = 0;
-    int totalBookings = 0;
+    double totalRevenue = 0;      // Стоимость только дней, попавших в период
+    double paidAmount = 0;        // Оплаты, произведенные в период
+    int totalBookings = 0;        // Количество бронирований, пересекающихся с периодом
 
     QSqlQuery query(database->getDatabase());
 
-    // 1. Общая статистика по бронированиям за период
+    // 1. Получаем все бронирования, пересекающиеся с периодом
+    // и рассчитываем стоимость ТОЛЬКО за дни, попавшие в период
     query.prepare("SELECT "
-                  "COUNT(*) as bookings_count, "
-                  "SUM(total_price) as total_revenue "
-                  "FROM bookings "
-                  "WHERE status = 'active' "
-                  "AND check_in_date <= ? "
-                  "AND check_out_date >= ?");
+                  "bk.id, "
+                  "bk.bed_id, "
+                  "bk.check_in_date, "
+                  "bk.check_out_date, "
+                  "bk.total_price, "
+                  "bk.paid_amount, "
+                  "bk.payment_method, "
+                  "bk.payment_date, "
+                  "bk.is_room_booking, "
+                  "bk.room_booking_group, "
+                  "r.room_number, "
+                  "b.bed_number, "
+                  "c.last_name || ' ' || c.first_name as client_name "
+                  "FROM bookings bk "
+                  "JOIN beds b ON bk.bed_id = b.id "
+                  "JOIN rooms r ON b.room_id = r.id "
+                  "JOIN clients c ON bk.client_id = c.id "
+                  "WHERE bk.status = 'active' "
+                  "AND bk.check_in_date <= ? "
+                  "AND bk.check_out_date >= ? "
+                  "ORDER BY bk.check_in_date, r.room_number, b.bed_number");
     query.addBindValue(endDate.toString("yyyy-MM-dd"));
     query.addBindValue(startDate.toString("yyyy-MM-dd"));
 
-    if (query.exec() && query.next()) {
-        totalBookings = query.value(0).toInt();
-        totalRevenue = query.value(1).toDouble();
+    QList<BookingData> bookings;
+
+    if (query.exec()) {
+        while (query.next()) {
+            BookingData booking;
+            booking.id = query.value(0).toInt();
+            booking.checkIn = QDate::fromString(query.value(2).toString(), "yyyy-MM-dd");
+            booking.checkOut = QDate::fromString(query.value(3).toString(), "yyyy-MM-dd");
+            booking.totalPrice = query.value(4).toDouble();
+            booking.paidAmount = query.value(5).toDouble();
+            booking.paymentMethod = query.value(6).toString();
+            booking.paymentDate = QDateTime::fromString(query.value(7).toString(), "yyyy-MM-dd hh:mm:ss");
+            booking.isRoomBooking = query.value(8).toBool();
+            booking.roomBookingGroup = query.value(9).toInt();
+            booking.roomNumber = query.value(10).toString();
+            booking.bedNumber = query.value(11).toInt();
+            booking.clientName = query.value(12).toString();
+
+            // Рассчитываем количество дней в периоде
+            booking.totalDays = booking.checkIn.daysTo(booking.checkOut);
+
+            // Определяем фактический период пересечения с отчетным периодом
+            QDate actualStart = booking.checkIn > startDate ? booking.checkIn : startDate;
+            QDate actualEnd = booking.checkOut < endDate ? booking.checkOut : endDate;
+            booking.daysInPeriod = actualStart.daysTo(actualEnd);
+
+            // Рассчитываем стоимость за день
+            if (booking.totalDays > 0) {
+                booking.pricePerDay = booking.totalPrice / booking.totalDays;
+            } else {
+                booking.pricePerDay = 0;
+            }
+
+            // Стоимость только за дни, попавшие в период
+            booking.revenueInPeriod = booking.pricePerDay * booking.daysInPeriod;
+
+            bookings.append(booking);
+
+            // Суммируем общую выручку за период
+            totalRevenue += booking.revenueInPeriod;
+            totalBookings++;
+        }
     }
 
     // 2. Оплаты, произведенные в выбранный период (используем payment_date)
@@ -198,7 +281,7 @@ void ReportWindow::generateSummaryReport()
         paidAmount = query.value(0).toDouble();
     }
 
-    unpaidAmount = totalRevenue - paidAmount;
+    double unpaidAmount = totalRevenue - paidAmount;
 
     // 3. Статистика по способам оплаты за период
     query.prepare("SELECT "
@@ -241,96 +324,95 @@ void ReportWindow::generateSummaryReport()
         totalBeds = query.value(0).toInt();
     }
 
-    // 5. Статистика по комнатам
-    query.prepare("SELECT "
-                  "r.category, "
-                  "COUNT(DISTINCT bk.id) as bookings_count, "
-                  "SUM(bk.total_price) as category_revenue "
-                  "FROM bookings bk "
-                  "JOIN beds b ON bk.bed_id = b.id "
-                  "JOIN rooms r ON b.room_id = r.id "
-                  "WHERE bk.status = 'active' "
-                  "AND bk.check_in_date <= ? "
-                  "AND bk.check_out_date >= ? "
-                  "GROUP BY r.category "
-                  "ORDER BY category_revenue DESC");
-    query.addBindValue(endDate.toString("yyyy-MM-dd"));
-    query.addBindValue(startDate.toString("yyyy-MM-dd"));
+    // 5. Статистика по комнатам (с учетом пропорционального расчета)
+    QMap<QString, CategoryStats> categoryStats;
 
-    QList<QString> categories;
-    QList<int> catBookings;
-    QList<double> catRevenues;
+    for (const auto& booking : bookings) {
+        // Получаем категорию комнаты
+        QString category;
+        QSqlQuery catQuery(database->getDatabase());
+        catQuery.prepare("SELECT category FROM rooms WHERE room_number = ?");
+        catQuery.addBindValue(booking.roomNumber);
+        if (catQuery.exec() && catQuery.next()) {
+            category = catQuery.value(0).toString();
+        }
 
-    if (query.exec()) {
-        while (query.next()) {
-            categories.append(query.value(0).toString());
-            catBookings.append(query.value(1).toInt());
-            catRevenues.append(query.value(2).toDouble());
+        if (!category.isEmpty()) {
+            categoryStats[category].bookingsCount++;
+            categoryStats[category].revenue += booking.revenueInPeriod;
+
+            // Проверяем, попадает ли оплата в период
+            if (booking.paymentDate.isValid() &&
+                booking.paymentDate.date() >= startDate &&
+                booking.paymentDate.date() <= endDate) {
+                categoryStats[category].paid += booking.paidAmount;
+            }
         }
     }
 
-    // 6. Статистика оплат по категориям за период
-    QMap<QString, double> catPaids;
-    query.prepare("SELECT "
-                  "r.category, "
-                  "SUM(bk.paid_amount) as category_paid "
-                  "FROM bookings bk "
-                  "JOIN beds b ON bk.bed_id = b.id "
-                  "JOIN rooms r ON b.room_id = r.id "
-                  "WHERE bk.status = 'active' "
-                  "AND bk.paid_amount > 0 "
-                  "AND DATE(bk.payment_date) BETWEEN ? AND ? "
-                  "GROUP BY r.category");
-    query.addBindValue(startDate.toString("yyyy-MM-dd"));
-    query.addBindValue(endDate.toString("yyyy-MM-dd"));
+    // 6. Детализированные данные с учетом пропорционального расчета
+    reportTable->clear();
+    reportTable->setRowCount(0);
+    reportTable->setColumnCount(11);
+    QStringList headers;
+    headers << "Дата заезда" << "Дата выезда" << "Комната" << "Койка" << "Тип" << "Клиент"
+            << "Общая сумма" << "Стоимость за сутки" << "Дней в периоде" << "Сумма за период" << "Дата оплаты";
+    reportTable->setHorizontalHeaderLabels(headers);
 
-    if (query.exec()) {
-        while (query.next()) {
-            QString category = query.value(0).toString();
-            double paid = query.value(1).toDouble();
-            catPaids[category] = paid;
+    for (const auto& booking : bookings) {
+        int row = reportTable->rowCount();
+        reportTable->insertRow(row);
+
+        QString bookingType = booking.isRoomBooking ? "Комната целиком" : "Место";
+        QString paymentDateStr = booking.paymentDate.isValid() ?
+            booking.paymentDate.toString("dd.MM.yyyy hh:mm") : "Не указана";
+
+        bool isPaymentInPeriod = booking.paymentDate.isValid() &&
+                                 booking.paymentDate.date() >= startDate &&
+                                 booking.paymentDate.date() <= endDate;
+
+        QString paidDisplay = QString::number(booking.paidAmount, 'f', 2) + " руб.";
+        if (booking.paidAmount > 0 && !isPaymentInPeriod) {
+            paidDisplay += " (вне периода)";
+        }
+
+        reportTable->setItem(row, 0, new QTableWidgetItem(booking.checkIn.toString("dd.MM.yyyy")));
+        reportTable->setItem(row, 1, new QTableWidgetItem(booking.checkOut.toString("dd.MM.yyyy")));
+        reportTable->setItem(row, 2, new QTableWidgetItem(booking.roomNumber));
+        reportTable->setItem(row, 3, new QTableWidgetItem(QString::number(booking.bedNumber)));
+        reportTable->setItem(row, 4, new QTableWidgetItem(bookingType));
+        reportTable->setItem(row, 5, new QTableWidgetItem(booking.clientName));
+        reportTable->setItem(row, 6, new QTableWidgetItem(QString::number(booking.totalPrice, 'f', 2) + " руб."));
+        reportTable->setItem(row, 7, new QTableWidgetItem(QString::number(booking.pricePerDay, 'f', 2) + " руб."));
+        reportTable->setItem(row, 8, new QTableWidgetItem(QString::number(booking.daysInPeriod)));
+        reportTable->setItem(row, 9, new QTableWidgetItem(QString::number(booking.revenueInPeriod, 'f', 2) + " руб."));
+        reportTable->setItem(row, 10, new QTableWidgetItem(paymentDateStr));
+
+        // Цветовая индикация
+        QColor rowColor;
+        if (booking.revenueInPeriod <= 0) {
+            rowColor = QColor(240, 240, 240); // Серый - нет дней в периоде
+        } else if (booking.revenueInPeriod <= booking.paidAmount && isPaymentInPeriod) {
+            rowColor = QColor(200, 255, 200); // Зеленый - полностью оплачено в период
+        } else if (booking.revenueInPeriod <= booking.paidAmount) {
+            rowColor = QColor(150, 255, 150); // Темно-зеленый - полностью оплачено до периода
+        } else if (booking.paidAmount > 0) {
+            rowColor = QColor(255, 255, 200); // Желтый - частично оплачено
+        } else {
+            rowColor = QColor(255, 200, 200); // Красный - не оплачено
+        }
+
+        for (int col = 0; col < 11; ++col) {
+            if (reportTable->item(row, col)) {
+                reportTable->item(row, col)->setBackground(rowColor);
+            }
         }
     }
 
-    // 7. Детализированные данные
-    query.prepare("SELECT "
-                  "bk.check_in_date, "
-                  "r.room_number, "
-                  "b.bed_number, "
-                  "c.last_name || ' ' || c.first_name as client_name, "
-                  "bk.total_price, "
-                  "bk.paid_amount, "
-                  "bk.payment_method, "
-                  "bk.is_room_booking, "
-                  "bk.payment_date "
-                  "FROM bookings bk "
-                  "JOIN beds b ON bk.bed_id = b.id "
-                  "JOIN rooms r ON b.room_id = r.id "
-                  "JOIN clients c ON bk.client_id = c.id "
-                  "WHERE bk.status = 'active' "
-                  "AND (bk.check_in_date <= ? AND bk.check_out_date >= ?) "
-                  "ORDER BY bk.check_in_date, r.room_number, b.bed_number");
-    query.addBindValue(endDate.toString("yyyy-MM-dd"));
-    query.addBindValue(startDate.toString("yyyy-MM-dd"));
+    reportTable->resizeColumnsToContents();
+    reportTable->horizontalHeader()->setStretchLastSection(true);
 
-    QList<QVariantMap> detailedData;
-    if (query.exec()) {
-        while (query.next()) {
-            QVariantMap item;
-            item["check_in_date"] = query.value(0);
-            item["room_number"] = query.value(1);
-            item["bed_number"] = query.value(2);
-            item["client_name"] = query.value(3);
-            item["total_price"] = query.value(4);
-            item["paid_amount"] = query.value(5);
-            item["payment_method"] = query.value(6);
-            item["is_room_booking"] = query.value(7);
-            item["payment_date"] = query.value(8);
-            detailedData.append(item);
-        }
-    }
-
-    // Формируем отчет
+    // Формируем текстовый отчет
     QString report;
     report += QString("<html><body>"
                      "<h2 align='center'>СВОДНЫЙ ОТЧЕТ</h2>"
@@ -344,7 +426,7 @@ void ReportWindow::generateSummaryReport()
     report += QString("<table border='1' cellpadding='5' style='border-collapse: collapse; width: 100%;'>"
                      "<tr><td width='70%'><b>Показатель</b></td><td width='30%' align='right'><b>Значение</b></td></tr>"
                      "<tr><td>Количество бронирований (пересекающихся с периодом)</td><td align='right'>%1</td></tr>"
-                     "<tr><td>Общая стоимость бронирований за период</td><td align='right'>%2 руб.</td></tr>"
+                     "<tr><td>Общая стоимость бронирований (только дни в периоде)</td><td align='right'>%2 руб.</td></tr>"
                      "<tr><td>Полученная оплата (в период %3 - %4)</td><td align='right'>%5 руб.</td></tr>"
                      "<tr><td>Задолженность по бронированиям за период</td><td align='right'>%6 руб.</td></tr>"
                      "<tr><td>Процент оплаты от общей стоимости</td><td align='right'>%7%</td></tr>"
@@ -359,78 +441,99 @@ void ReportWindow::generateSummaryReport()
 
     // Добавляем пояснение
     report += "<p style='color: gray; font-size: 9pt;'>"
-             "<i>Примечание: В графе \"Полученная оплата\" учитываются только платежи, "
-             "произведенные в выбранный период (по дате оплаты). Если бронирование пересекается с периодом, "
-             "но оплата была произведена ранее или позже, она не включается в отчет за этот период.</i>"
+             "<i>Примечание: <br>"
+             "• В графе \"Общая стоимость бронирований\" учитывается стоимость ТОЛЬКО тех дней, "
+             "которые попадают в выбранный период.<br>"
+             "• Если бронирование частично выходит за пределы периода, учитывается только "
+             "пропорциональная часть стоимости.<br>"
+             "• В графе \"Полученная оплата\" учитываются только платежи, произведенные в выбранный период "
+             "(по дате оплаты).</i>"
              "</p>";
 
-    // ... остальная часть отчета (занятость, способы оплаты, категории) остается без изменений ...
+    // Статистика занятости
+    double occupancyRate = totalBeds > 0 ? (occupiedBeds * 100.0 / totalBeds) : 0;
+    report += "<h3>2. Занятость мест (на " + endDate.toString("dd.MM.yyyy") + "):</h3>";
+    report += QString("<table border='1' cellpadding='5' style='border-collapse: collapse; width: 100%;'>"
+                     "<tr><td width='70%'><b>Показатель</b></td><td width='30%' align='right'><b>Значение</b></td></tr>"
+                     "<tr><td>Всего мест</td><td align='right'>%1</td></tr>"
+                     "<tr><td>Занято мест</td><td align='right'>%2</td></tr>"
+                     "<tr><td>Свободно мест</td><td align='right'>%3</td></tr>"
+                     "<tr><td>Процент загрузки</td><td align='right'>%4%</td></tr>"
+                     "</table><br>")
+                     .arg(totalBeds)
+                     .arg(occupiedBeds)
+                     .arg(totalBeds - occupiedBeds)
+                     .arg(occupancyRate, 0, 'f', 1);
 
-    // Заполняем таблицу детализированными данными
-    reportTable->clear();
-    reportTable->setRowCount(0);
-    reportTable->setColumnCount(10);
-    reportTable->setHorizontalHeaderLabels({
-        "Дата заезда", "Комната", "Койка", "Тип", "Клиент",
-        "Общая сумма", "Оплачено", "Остаток", "Способ оплаты", "Дата оплаты"
-    });
+    // Статистика по способам оплаты за период
+    if (!paymentsByMethod.isEmpty()) {
+        report += "<h3>3. Распределение оплаты по способам (за период):</h3>";
+        report += "<table border='1' cellpadding='5' style='border-collapse: collapse; width: 100%;'>"
+                 "<tr><td width='60%'><b>Способ оплаты</b></td><td width='20%' align='right'><b>Сумма</b></td><td width='20%' align='right'><b>Доля</b></td></tr>";
 
-    for (int i = 0; i < detailedData.size(); ++i) {
-        const QVariantMap &item = detailedData[i];
-        reportTable->insertRow(i);
-
-        QDate checkIn = QDate::fromString(item["check_in_date"].toString(), "yyyy-MM-dd");
-        double totalPrice = item["total_price"].toDouble();
-        double paid = item["paid_amount"].toDouble();
-        double balance = totalPrice - paid;
-        bool isRoomBooking = item["is_room_booking"].toBool();
-        QDateTime paymentDateTime = QDateTime::fromString(item["payment_date"].toString(), "yyyy-MM-dd hh:mm:ss");
-
-        QString bookingType = isRoomBooking ? "Комната целиком" : "Место";
-        QString paymentDateStr = paymentDateTime.isValid() ?
-            paymentDateTime.toString("dd.MM.yyyy hh:mm") : "Не указана";
-
-        bool isPaymentInPeriod = paymentDateTime.isValid() &&
-                                 paymentDateTime.date() >= startDate &&
-                                 paymentDateTime.date() <= endDate;
-
-        QString paidDisplay = QString::number(paid, 'f', 2) + " руб.";
-        if (paid > 0 && !isPaymentInPeriod) {
-            paidDisplay += " (вне периода)";
+        double totalPaid = 0;
+        for (auto it = paymentsByMethod.begin(); it != paymentsByMethod.end(); ++it) {
+            totalPaid += it.value();
         }
 
-        reportTable->setItem(i, 0, new QTableWidgetItem(checkIn.toString("dd.MM.yyyy")));
-        reportTable->setItem(i, 1, new QTableWidgetItem(item["room_number"].toString()));
-        reportTable->setItem(i, 2, new QTableWidgetItem(item["bed_number"].toString()));
-        reportTable->setItem(i, 3, new QTableWidgetItem(bookingType));
-        reportTable->setItem(i, 4, new QTableWidgetItem(item["client_name"].toString()));
-        reportTable->setItem(i, 5, new QTableWidgetItem(QString::number(totalPrice, 'f', 2) + " руб."));
-        reportTable->setItem(i, 6, new QTableWidgetItem(paidDisplay));
-        reportTable->setItem(i, 7, new QTableWidgetItem(QString::number(balance, 'f', 2) + " руб."));
-        reportTable->setItem(i, 8, new QTableWidgetItem(item["payment_method"].toString()));
-        reportTable->setItem(i, 9, new QTableWidgetItem(paymentDateStr));
+        for (auto it = paymentsByMethod.begin(); it != paymentsByMethod.end(); ++it) {
+            QString method = it.key();
+            double amount = it.value();
+            double percentage = totalPaid > 0 ? (amount * 100 / totalPaid) : 0;
 
-        QColor rowColor;
-        if (balance <= 0 && isPaymentInPeriod) {
-            rowColor = QColor(200, 255, 200);
-        } else if (balance <= 0) {
-            rowColor = QColor(150, 255, 150);
-        } else if (paid > 0) {
-            rowColor = QColor(255, 255, 200);
-        } else {
-            rowColor = QColor(255, 200, 200);
+            report += QString("<tr>"
+                             "<td>%1</td>"
+                             "<td align='right'>%2 руб.</td>"
+                             "<td align='right'>%3%</td>"
+                             "</tr>")
+                             .arg(method)
+                             .arg(amount, 0, 'f', 2)
+                             .arg(percentage, 0, 'f', 1);
         }
 
-        for (int col = 0; col < 10; ++col) {
-            if (reportTable->item(i, col)) {
-                reportTable->item(i, col)->setBackground(rowColor);
-            }
-        }
+        report += QString("<tr style='font-weight: bold; background-color: #f0f0f0;'>"
+                         "<td>ИТОГО ОПЛАЧЕНО ЗА ПЕРИОД:</td>"
+                         "<td align='right'>%1 руб.</td>"
+                         "<td align='right'>100%</td>"
+                         "</tr>")
+                         .arg(totalPaid, 0, 'f', 2);
+
+        report += "</table><br>";
     }
 
-    reportTable->resizeColumnsToContents();
-    reportTable->horizontalHeader()->setStretchLastSection(true);
+    // Статистика по категориям комнат
+    if (!categoryStats.isEmpty()) {
+        report += "<h3>4. Статистика по категориям номеров (только дни в периоде):</h3>";
+        report += "<table border='1' cellpadding='5' style='border-collapse: collapse; width: 100%;'>"
+                 "<tr><td><b>Категория</b></td><td align='right'><b>Броней</b></td>"
+                 "<td align='right'><b>Выручка за период</b></td>"
+                 "<td align='right'><b>Оплачено за период</b></td>"
+                 "<td align='right'><b>% оплаты</b></td></tr>";
 
+        for (auto it = categoryStats.begin(); it != categoryStats.end(); ++it) {
+            QString category = it.key();
+            int bookingsCount = it.value().bookingsCount;
+            double revenue = it.value().revenue;
+            double paid = it.value().paid;
+            double paymentRate = revenue > 0 ? (paid * 100 / revenue) : 0;
+
+            report += QString("<tr>"
+                             "<td>%1</td>"
+                             "<td align='right'>%2</td>"
+                             "<td align='right'>%3 руб.</td>"
+                             "<td align='right'>%4 руб.</td>"
+                             "<td align='right'>%5%</td>"
+                             "</tr>")
+                             .arg(category)
+                             .arg(bookingsCount)
+                             .arg(revenue, 0, 'f', 2)
+                             .arg(paid, 0, 'f', 2)
+                             .arg(paymentRate, 0, 'f', 1);
+        }
+        report += "</table><br>";
+    }
+
+    // Дата и время формирования отчета
     report += QString("<hr><p align='right' style='font-size: 10pt; color: gray;'>"
                      "Отчет сформирован: %1 %2</p>"
                      "</body></html>")
@@ -439,7 +542,6 @@ void ReportWindow::generateSummaryReport()
 
     reportTextEdit->setHtml(report);
 }
-
 void ReportWindow::printReport()
 {
     QPrinter printer;
