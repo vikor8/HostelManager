@@ -1951,7 +1951,7 @@ void HostelManager::updateTableColors()
         if (database->isDatabaseConnected()) {
             QSqlQuery query(database->getDatabase());
 
-            // Обновленный запрос с дополнительными полями
+            // Обновленный запрос: день выезда НЕ включается в занятые дни
             query.prepare("SELECT "
                           "r.room_number, "
                           "b.bed_number, "
@@ -1969,7 +1969,8 @@ void HostelManager::updateTableColors()
                           "JOIN rooms r ON b.room_id = r.id "
                           "JOIN clients c ON bk.client_id = c.id "
                           "WHERE bk.status = 'active' "
-                          "AND NOT (bk.check_out_date < :start_date OR bk.check_in_date > :end_date)");
+                          "AND bk.check_in_date <= :end_date "
+                          "AND bk.check_out_date > :start_date");
 
             QString startDateStr = currentStartDate.toString("yyyy-MM-dd");
             QString endDateStr = currentStartDate.addDays(DAYS_COUNT - 1).toString("yyyy-MM-dd");
@@ -1993,9 +1994,10 @@ void HostelManager::updateTableColors()
 
                     QString key = roomNumber + "_" + QString::number(bedNumber);
 
-                    // Добавляем все даты бронирования в набор
+                    // ИЗМЕНЕНО: date < checkOut вместо date <= checkOut
+                    // День выезда не считается занятым
                     QDate date = checkIn;
-                    while (date <= checkOut && date <= currentStartDate.addDays(DAYS_COUNT - 1)) {
+                    while (date < checkOut && date <= currentStartDate.addDays(DAYS_COUNT - 1)) {
                         if (date >= currentStartDate) {
                             occupiedDates[key].insert(date);
 
@@ -2104,7 +2106,7 @@ void HostelManager::updateTableColors()
 
                 // Проверяем, занята ли койка на эту дату
                 bool isOccupied = occupiedDates.contains(key) &&
-                                 occupiedDates[key].contains(currentDate);
+                                  occupiedDates[key].contains(currentDate);
 
                 // Устанавливаем цвет в зависимости от статуса
                 if (isOccupied) {
@@ -2174,7 +2176,7 @@ void HostelManager::updateTableColors()
                             (cellColor.red() * 0.7 + weekendColor.red() * 0.3),
                             (cellColor.green() * 0.7 + weekendColor.green() * 0.3),
                             (cellColor.blue() * 0.7 + weekendColor.blue() * 0.3)
-                        );
+                            );
                     } else if (isWeekend && isRoomBooking) {
                         // Для бронирований комнат в выходные делаем цвет чуть темнее
                         cellColor = cellColor.darker(105);
@@ -2185,9 +2187,9 @@ void HostelManager::updateTableColors()
 
                     // Формируем подробную подсказку
                     QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\n")
-                        .arg(roomNumber)
-                        .arg(bedNumber)
-                        .arg(currentDate.toString("dd.MM.yyyy - dddd"));
+                                          .arg(roomNumber)
+                                          .arg(bedNumber)
+                                          .arg(currentDate.toString("dd.MM.yyyy - dddd"));
 
                     if (isOccupied && !payment.isEmpty()) {
                         QString clientName = payment["client_full_name"].toString();
@@ -2200,19 +2202,19 @@ void HostelManager::updateTableColors()
                         }
 
                         tooltip += QString("Общая стоимость: %1 руб.\n"
-                                         "Оплачено: %2 руб.\n"
-                                         "Остаток: %3 руб.\n"
-                                         "Способ оплаты: %4\n")
-                            .arg(totalPrice, 0, 'f', 2)
-                            .arg(paidAmount, 0, 'f', 2)
-                            .arg(balance, 0, 'f', 2)
-                            .arg(payment["payment_method"].toString());
+                                           "Оплачено: %2 руб.\n"
+                                           "Остаток: %3 руб.\n"
+                                           "Способ оплаты: %4\n")
+                                       .arg(totalPrice, 0, 'f', 2)
+                                       .arg(paidAmount, 0, 'f', 2)
+                                       .arg(balance, 0, 'f', 2)
+                                       .arg(payment["payment_method"].toString());
 
                         if (balance <= 0) {
                             tooltip += "Статус: Полностью оплачено";
                         } else if (paidAmount > 0) {
                             tooltip += QString("Статус: Частично оплачено (%1%)")
-                                .arg(paidPercentage);
+                                           .arg(paidPercentage);
                         } else {
                             tooltip += "Статус: Не оплачено";
                         }
@@ -2236,7 +2238,7 @@ void HostelManager::updateTableColors()
                             (baseColor.red() * 0.7 + weekendColor.red() * 0.3),
                             (baseColor.green() * 0.7 + weekendColor.green() * 0.3),
                             (baseColor.blue() * 0.7 + weekendColor.blue() * 0.3)
-                        );
+                            );
                     }
 
                     item->setBackground(QBrush(baseColor));
@@ -2251,10 +2253,10 @@ void HostelManager::updateTableColors()
 
                     // Подсказка для свободного места
                     QString tooltip = QString("Комната: %1, Койка: %2\nДата: %3\nСтатус: Свободно\nКатегория: %4")
-                        .arg(roomNumber)
-                        .arg(bedNumber)
-                        .arg(currentDate.toString("dd.MM.yyyy - dddd"))
-                        .arg(category);
+                                          .arg(roomNumber)
+                                          .arg(bedNumber)
+                                          .arg(currentDate.toString("dd.MM.yyyy - dddd"))
+                                          .arg(category);
 
                     if (isWeekend) {
                         tooltip += "\nВыходной день";
@@ -2287,12 +2289,12 @@ void HostelManager::updateTableColors()
         totalRoomBookings = uniqueRoomBookingGroups.size();
 
         ui->lblStatus->setText(QString("Период: %1 - %2 | База данных: %3 | Занято мест: %4 | Комнат целиком: %5 | Обновлено: %6")
-            .arg(currentStartDate.toString("dd.MM.yyyy"))
-            .arg(endDate.toString("dd.MM.yyyy"))
-            .arg(dbStatus)
-            .arg(totalOccupied)
-            .arg(totalRoomBookings)
-            .arg(QTime::currentTime().toString("hh:mm:ss")));
+                                   .arg(currentStartDate.toString("dd.MM.yyyy"))
+                                   .arg(endDate.toString("dd.MM.yyyy"))
+                                   .arg(dbStatus)
+                                   .arg(totalOccupied)
+                                   .arg(totalRoomBookings)
+                                   .arg(QTime::currentTime().toString("hh:mm:ss")));
 
         // Обновляем название группы
         ui->groupBox_2->setTitle(QString("Расписание занятости номеров (%1 дней)").arg(DAYS_COUNT));
@@ -2305,6 +2307,7 @@ void HostelManager::updateTableColors()
         qDebug() << "Неизвестная ошибка при обновлении цветов";
     }
 }
+
 // Слот для добавления нового бронирования
 void HostelManager::onAddBooking()
 {
