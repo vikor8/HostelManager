@@ -336,24 +336,31 @@ void ReportWindow::generateSummaryReport()
         }
     }
 
-    // ================= 3. ЗАНЯТОСТЬ МЕСТ =================
-    int occupiedBeds = 0;
-    int totalBeds = 0;
+    // ================= 3. ЗАНЯТОСТЬ МЕСТ (ЗА ВЕСЬ ПЕРИОД) =================
+    int totalBedsInPeriod = 0;      // Всего койко-мест за период (сумма по дням)
+    int occupiedBedsInPeriod = 0;   // Занято койко-мест за период (сумма по дням)
 
-    query.prepare("SELECT COUNT(DISTINCT bed_id) FROM bookings "
-                  "WHERE status = 'active' "
-                  "AND check_in_date <= ? "
-                  "AND check_out_date > ?");
-    query.addBindValue(endDate.toString("yyyy-MM-dd"));
-    query.addBindValue(endDate.toString("yyyy-MM-dd"));
-    if (query.exec() && query.next()) {
-        occupiedBeds = query.value(0).toInt();
-    }
-
+    // Получаем общее количество активных коек
+    int totalActiveBeds = 0;
     query.exec("SELECT COUNT(*) FROM beds WHERE is_active = 1");
     if (query.next()) {
-        totalBeds = query.value(0).toInt();
+        totalActiveBeds = query.value(0).toInt();
     }
+
+    // Считаем количество дней в периоде
+    int daysInPeriod = startDate.daysTo(endDate) + 1;
+
+    // Всего койко-мест за период = количество коек × количество дней
+    totalBedsInPeriod = totalActiveBeds * daysInPeriod;
+
+    // Занято койко-мест за период — используем уже посчитанный totalBookedBeds
+    occupiedBedsInPeriod = totalBookedBeds;
+
+    // Свободно койко-мест за период
+    int freeBedsInPeriod = totalBedsInPeriod - occupiedBedsInPeriod;
+
+    // Процент загрузки за период
+    double occupancyRate = totalBedsInPeriod > 0 ? (occupiedBedsInPeriod * 100.0 / totalBedsInPeriod) : 0;
 
     // ================= 4. ВНЕСЕННЫЕ ПЛАТЕЖИ =================
     struct PaymentRecord {
@@ -577,14 +584,13 @@ void ReportWindow::generateSummaryReport()
         html += "<p>За выбранный период не было произведено ни одного платежа.</p>\n";
     }
 
-    // 3. Занятость мест
-    double occupancyRate = totalBeds > 0 ? (occupiedBeds * 100.0 / totalBeds) : 0;
-    html += "<h3>3. Занятость мест (на " + endDate.toString("dd.MM.yyyy") + "):</h3>\n";
+    // 3. Занятость мест (за период)
+    html += "<h3>3. Занятость мест (за период):</h3>\n";
     html += "<table>\n";
     html += "   <tr><th>Показатель</th><th>Значение</th></tr>\n";
-    html += QString("   <tr><td>Всего мест</td><td align='right'>%1</td></tr>\n").arg(totalBeds);
-    html += QString("   <tr><td>Занято мест</td><td align='right'>%1</td></tr>\n").arg(occupiedBeds);
-    html += QString("   <tr><td>Свободно мест</td><td align='right'>%1</td></tr>\n").arg(totalBeds - occupiedBeds);
+    html += QString("   <tr><td>Всего койко-мест</td><td align='right'>%1</td></tr>\n").arg(totalBedsInPeriod);
+    html += QString("   <tr><td>Занято койко-мест</td><td align='right'>%1</td></tr>\n").arg(occupiedBedsInPeriod);
+    html += QString("   <tr><td>Свободно койко-мест</td><td align='right'>%1</td></tr>\n").arg(freeBedsInPeriod);
     html += QString("   <tr><td>Процент загрузки</td><td align='right'>%1%</td></tr>\n").arg(occupancyRate, 0, 'f', 1);
     html += "</table>\n";
 
