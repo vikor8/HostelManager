@@ -1,6 +1,8 @@
 #include "addbookingdialog.h"
 #include "database.h"
 #include "addclientdialog.h"
+#include "adminpasswordmanager.h"
+
 #include <QPushButton>
 #include <QMessageBox>
 #include <QDebug>
@@ -18,6 +20,7 @@
 #include <QStyle>
 #include <QToolTip>
 #include <QApplication>
+#include <QInputDialog>
 
 AddBookingDialog::AddBookingDialog(Database *db, QWidget *parent)
     : QDialog(parent)
@@ -142,13 +145,13 @@ void AddBookingDialog::setupUi()
     checkInEdit->setDate(QDate::currentDate());
     checkInEdit->setCalendarPopup(true);
     checkInEdit->setDisplayFormat("dd.MM.yyyy");
-    checkInEdit->setMinimumDate(QDate::currentDate());
+   // checkInEdit->setMinimumDate(QDate::currentDate());
 
     checkOutEdit = new QDateEdit(this);
     checkOutEdit->setDate(QDate::currentDate().addDays(1));
     checkOutEdit->setCalendarPopup(true);
     checkOutEdit->setDisplayFormat("dd.MM.yyyy");
-    checkOutEdit->setMinimumDate(QDate::currentDate().addDays(1));
+    //checkOutEdit->setMinimumDate(QDate::currentDate().addDays(1));
 
     dateLayout->addWidget(new QLabel("Заезд:", this));
     dateLayout->addWidget(checkInEdit);
@@ -505,6 +508,18 @@ void AddBookingDialog::validateForm()
 // Обновляем onAccept для проверки оплаченной суммы
 void AddBookingDialog::onAccept()
 {
+    // Проверяем дату заезда
+    if (checkInEdit->date() < QDate::currentDate()) {
+        bool ok;
+        QString password = QInputDialog::getText(this, "Внимание",
+                                                 "Бронирование задним числом!\nВведите пароль администратора:",
+                                                 QLineEdit::Password, "", &ok);
+        if (!ok) return;
+        if (!AdminPasswordManager::instance()->checkPassword(password)) {
+            QMessageBox::warning(this, "Ошибка", "Неверный пароль");
+            return;
+        }
+    }
     // Проверяем обязательные поля
     if (clientId() <= 0) {
         QMessageBox::warning(this, "Ошибка", "Выберите клиента");

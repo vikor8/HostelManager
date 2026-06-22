@@ -5,6 +5,7 @@
 #include "addclientdialog.h"
 #include "addbookingdialog.h"
 #include "editpaymentdialog.h"
+#include "adminpasswordmanager.h"
 
 
 #include <QSettings>
@@ -276,6 +277,35 @@ void HostelManager::createMenuBar()
                     "Проверьте права доступа к папке назначения.");
             }
         }
+    });
+
+    // Разделитель
+    databaseMenu->addSeparator();
+
+    QMenu *settingsMenu = menuBar->addMenu("&Настройки");
+    QAction *changePasswordAction = settingsMenu->addAction("Сменить пароль администратора");
+    connect(changePasswordAction, &QAction::triggered, this, [this](){
+        // Диалог смены пароля
+        bool ok;
+        QString oldPassword = QInputDialog::getText(this, "Смена пароля",
+                                                    "Введите старый пароль:", QLineEdit::Password, "", &ok);
+        if (!ok) return;
+        if (!AdminPasswordManager::instance()->checkPassword(oldPassword)) {
+            QMessageBox::warning(this, "Ошибка", "Неверный пароль");
+            return;
+        }
+        QString newPassword = QInputDialog::getText(this, "Смена пароля",
+                                                    "Введите новый пароль:", QLineEdit::Password, "", &ok);
+        if (!ok) return;
+        QString confirmPassword = QInputDialog::getText(this, "Смена пароля",
+                                                        "Подтвердите новый пароль:", QLineEdit::Password, "", &ok);
+        if (!ok) return;
+        if (newPassword != confirmPassword) {
+            QMessageBox::warning(this, "Ошибка", "Пароли не совпадают");
+            return;
+        }
+        AdminPasswordManager::instance()->setPassword(newPassword);
+        QMessageBox::information(this, "Успех", "Пароль успешно изменен");
     });
 
     databaseMenu->addSeparator();
